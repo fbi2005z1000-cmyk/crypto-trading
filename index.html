@@ -1,0 +1,834 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Crypto Trading Arena - Trò chơi</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <canvas id="bgParticles" class="bg-canvas"></canvas>
+  <div class="noise"></div>
+  <div class="orb orb-a"></div>
+  <div class="orb orb-b"></div>
+  <button id="adminRevealBtn" class="admin-reveal" type="button" aria-label="Mo bang admin">Admin</button>
+  <div class="auth-overlay" id="authOverlay" aria-hidden="false">
+    <div class="auth-card">
+      <div class="auth-title">Đăng nhập</div>
+      <div class="auth-sub">Đăng nhập hoặc đăng ký để vào game.</div>
+      <label class="auth-label" for="authUsername">Tài khoản</label>
+      <input id="authUsername" class="auth-input" autocomplete="username" />
+      <label class="auth-label" for="authPassword">Mật khẩu</label>
+      <input id="authPassword" class="auth-input" type="password" autocomplete="current-password" />
+      <label class="auth-label" for="authInviteCode">Mã mời (nếu có)</label>
+      <input id="authInviteCode" class="auth-input" type="text" placeholder="Nhập mã mời khi đăng ký" />
+      <div id="authAdminCodeWrap" class="hidden">
+        <label class="auth-label" for="authAdminCode">Mã sếp (chỉ cho admin)</label>
+        <input id="authAdminCode" class="auth-input" type="password" autocomplete="one-time-code" placeholder="Nhập mã sếp để tiếp tục" />
+      </div>
+      <label class="auth-remember">
+        <input type="checkbox" id="authRemember" />
+        Ghi nhớ đăng nhập
+      </label>
+      <div class="auth-actions">
+        <button class="auth-btn primary" id="authLoginBtn" type="button" aria-label="Dang nhap">Đăng nhập</button>
+        <button class="auth-btn ghost" id="authRegisterBtn" type="button" aria-label="Dang ky">Đăng ký</button>
+      </div>
+      <div class="auth-error" id="authError"></div>
+    </div>
+  </div>
+  <div class="onboarding-overlay hidden" id="onboardingOverlay" aria-hidden="true">
+    <div class="onboarding-card">
+      <div class="onboarding-step" id="onboardingStep">Bước 1/3</div>
+      <div class="onboarding-title" id="onboardingTitle">Bắt đầu nhanh</div>
+      <div class="onboarding-text" id="onboardingText">Nhập tài khoản của bạn để vào game.</div>
+      <div class="onboarding-actions">
+        <button id="onboardingSkip" type="button">Bỏ qua</button>
+        <button id="onboardingSkipForever" type="button">Khong hien lai</button>
+        <button id="onboardingNext" type="button">Tiếp tục</button>
+      </div>
+    </div>
+    <div class="onboarding-tooltip" id="onboardingTooltip"></div>
+  </div>
+  <div class="academy-overlay hidden" id="academyOverlay" aria-hidden="true">
+    <div class="academy-spotlight" id="academySpotlight"></div>
+    <div class="academy-panel" id="academyPanel">
+      <div class="academy-head">
+        <div class="academy-step" id="academyStep">Bước 1/10</div>
+        <button class="academy-lang" id="academyLangToggle" type="button">🇻🇳 TIẾNG VIỆT / 🇺🇸 ENGLISH</button>
+      </div>
+      <div class="academy-title" id="academyTitle">Học viện Trading Tương tác</div>
+      <div class="academy-text" id="academyText"></div>
+      <div class="academy-progress">
+        <div class="academy-progress-fill" id="academyProgressFill"></div>
+      </div>
+      <div class="academy-actions">
+        <button id="academyPrev" type="button">Quay lại</button>
+        <button id="academyNext" type="button">Tiếp tục</button>
+        <button id="academyRestart" type="button">Bat dau lai</button>
+        <button id="academyClose" type="button">Thoát</button>
+      </div>
+    </div>
+  </div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">Σ</div>
+      <div>
+        <div class="brand-title">Crypto Trading Arena</div>
+        <div class="brand-sub">Mô phỏng sàn giao dịch siêu chi tiết</div>
+      </div>
+    </div>
+    <div class="status">
+      <div class="pill net-badge offline" id="netBadge">Mat ket noi</div>
+      <div class="pill pending-badge hidden" id="pendingBadge">Dang xu ly: 0</div>
+      <div class="pill live">MÔ PHỎNG LIVE</div>
+      <div class="pill">Tỷ giá 1 USD ≈ <span id="fxRate"></span> VND</div>
+      <div class="pill">Phí: <span id="feeRate">0.10%</span></div>
+      <div class="pill user-rank hidden" id="userRank"></div>
+      <button class="pill toggle" id="themeToggle" type="button" aria-label="Doi che do sang">Chế độ sáng</button>
+      <button class="pill toggle" id="academyBtn" type="button" aria-label="Mo hoc vien">Học viện</button>
+      <button class="pill toggle mail-btn" id="mailBtn" type="button" aria-label="Mo hop thu">
+        Hộp thư <span id="mailCount" class="mail-badge hidden">0</span>
+      </button>
+      <button class="pill toggle" id="logoutBtn" type="button" aria-label="Dang xuat">Đăng xuất</button>
+    </div>
+  </header>
+
+  <section class="ticker" aria-label="Bảng giá chạy">
+    <div class="ticker-track" id="tickerTrack"></div>
+  </section>
+  <section class="news-bar" aria-label="Tin tức thị trường">
+    <div class="news-label">TIN TỨC</div>
+    <div class="news-track" id="newsTrack"></div>
+  </section>
+
+  <main class="main-grid">
+    <section class="panel market" id="panelMarket">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Thị trường</div>
+          <div class="panel-sub">Tất cả cặp coin (mô phỏng)</div>
+        </div>
+        <div class="controls">
+          <button class="chip active" data-quote="USD">USD</button>
+          <button class="chip" data-quote="VND">VND</button>
+        </div>
+      </div>
+      <div class="market-tools">
+        <input id="searchInput" placeholder="Tìm coin (BTC, ETH...)" />
+        <div class="mini-toggle">
+          <button id="watchAll" class="mini active">Tất cả</button>
+          <button id="watchFav" class="mini">Theo dõi</button>
+        </div>
+        <div class="quick-filter">
+          <button id="quickToggle" class="mini">Tìm nhanh</button>
+          <div id="quickLetters" class="quick-letters hidden"></div>
+        </div>
+      </div>
+      <div class="market-table" id="marketTable"></div>
+    </section>
+
+    <section class="panel chart" id="panelChart">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title" id="pairTitle">BTC/USDT</div>
+          <div class="panel-sub" id="pairSub">Giá cập nhật theo thời gian thực</div>
+        </div>
+        <div class="price-box">
+          <div class="price" id="priceNow">0</div>
+          <div class="change" id="priceChange">0%</div>
+        </div>
+      </div>
+      <div class="stats-row">
+        <div class="stat">24h High <span id="high24">0</span></div>
+        <div class="stat">24h Low <span id="low24">0</span></div>
+        <div class="stat">24h Vol <span id="vol24">0</span></div>
+      </div>
+      <div class="sentiment">
+        <div class="sentiment-head">
+          <div class="sentiment-title">Fear & Greed Index</div>
+          <div class="sentiment-value" id="sentimentValue">50 Neutral</div>
+        </div>
+        <div class="sentiment-bar">
+          <div class="sentiment-fill" id="sentimentFill"></div>
+        </div>
+      </div>
+      <div class="chart-controls">
+        <div class="layout-group">
+          <button class="chip layout-btn active" data-layout="1">1x</button>
+          <button class="chip layout-btn" data-layout="2">2x</button>
+          <button class="chip layout-btn" data-layout="4">4x</button>
+        </div>
+        <div class="slot-selects" id="slotSelects">
+          <select class="slot-select" data-slot="0"></select>
+          <select class="slot-select" data-slot="1"></select>
+          <select class="slot-select" data-slot="2"></select>
+          <select class="slot-select" data-slot="3"></select>
+        </div>
+      </div>
+      <div class="chart-toolbar">
+        <div class="toolbar-group">
+          <button class="time-btn active" data-tf="1m">1m</button>
+          <button class="time-btn" data-tf="5m">5m</button>
+          <button class="time-btn" data-tf="15m">15m</button>
+          <button class="time-btn" data-tf="1h">1h</button>
+          <button class="time-btn" data-tf="1d">1d</button>
+        </div>
+        <div class="toolbar-group">
+          <button class="time-btn ind active" data-ind="ma14">MA14</button>
+          <button class="time-btn ind" data-ind="ma50">MA50</button>
+          <button class="time-btn ind" data-ind="rsi">RSI</button>
+          <button class="time-btn ind" data-ind="bb">BOLL</button>
+          <button class="time-btn ind" data-ind="macd">MACD</button>
+        </div>
+      </div>
+      <div class="chart-wrap" id="chartArea">
+          <div class="chart-grid layout-1" id="chartGrid">
+          <div class="chart-tile" data-slot="0">
+            <div class="tile-label" id="tileLabel0">BTC/USD</div>
+            <div class="chart-tv" data-slot="0"></div>
+            <canvas class="chart-layer chart-bg" id="priceBg0" width="900" height="380"></canvas>
+            <canvas class="chart-layer chart-fg" id="priceFg0" width="900" height="380"></canvas>
+            <canvas class="chart-layer chart-fx" id="priceFx0" width="900" height="380"></canvas>
+          </div>
+          <div class="chart-tile" data-slot="1">
+            <div class="tile-label" id="tileLabel1">ETH/USD</div>
+            <div class="chart-tv" data-slot="1"></div>
+            <canvas class="chart-layer chart-bg" id="priceBg1" width="900" height="380"></canvas>
+            <canvas class="chart-layer chart-fg" id="priceFg1" width="900" height="380"></canvas>
+            <canvas class="chart-layer chart-fx" id="priceFx1" width="900" height="380"></canvas>
+          </div>
+          <div class="chart-tile" data-slot="2">
+            <div class="tile-label" id="tileLabel2">SOL/USD</div>
+            <div class="chart-tv" data-slot="2"></div>
+            <canvas class="chart-layer chart-bg" id="priceBg2" width="900" height="380"></canvas>
+            <canvas class="chart-layer chart-fg" id="priceFg2" width="900" height="380"></canvas>
+            <canvas class="chart-layer chart-fx" id="priceFx2" width="900" height="380"></canvas>
+          </div>
+          <div class="chart-tile" data-slot="3">
+            <div class="tile-label" id="tileLabel3">XRP/USD</div>
+            <div class="chart-tv" data-slot="3"></div>
+            <canvas class="chart-layer chart-bg" id="priceBg3" width="900" height="380"></canvas>
+            <canvas class="chart-layer chart-fg" id="priceFg3" width="900" height="380"></canvas>
+            <canvas class="chart-layer chart-fx" id="priceFx3" width="900" height="380"></canvas>
+          </div>
+        </div>
+        <div class="chart-tooltip hidden" id="chartTooltip"></div>
+      </div>
+    </section>
+
+    <section class="panel orderbook" id="panelOrderbook">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Sổ lệnh</div>
+          <div class="panel-sub">Bid/Ask depth realtime</div>
+        </div>
+        <div class="legend">
+          <span class="dot green"></span> Mua
+          <span class="dot red"></span> Bán
+        </div>
+      </div>
+      <div class="depth-chart">
+        <canvas id="depthChart" width="420" height="140"></canvas>
+      </div>
+      <div class="orderbook-grid">
+        <div class="orderbook-col" id="asks"></div>
+        <div class="orderbook-col" id="bids"></div>
+      </div>
+    </section>
+
+    <section class="panel trades" id="panelTrades">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Lịch sử khớp lệnh</div>
+          <div class="panel-sub">Giao dịch mới nhất</div>
+        </div>
+      </div>
+      <div class="trades-list" id="tradesList"></div>
+    </section>
+
+    <section class="panel orderform" id="panelOrder">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Đặt lệnh</div>
+          <div class="panel-sub">Thị trường / Giới hạn</div>
+        </div>
+          <div class="tabs">
+            <button class="tab active" data-side="buy" id="btnLong" aria-label="Mo lenh mua">Mua</button>
+            <button class="tab" data-side="sell" id="btnShort" aria-label="Mo lenh ban">Bán</button>
+          </div>
+      </div>
+      <div class="form-grid">
+        <label>Loại lệnh</label>
+        <select id="orderType" aria-label="Loai lenh">
+          <option value="market">Thị trường</option>
+          <option value="limit">Giới hạn</option>
+        </select>
+
+          <label>Đòn bẩy</label>
+          <select id="leverageSlider" aria-label="Don bay">
+          <option value="1">x1 (Spot)</option>
+          <option value="5">x5</option>
+          <option value="10">x10</option>
+          <option value="25">x25</option>
+          <option value="50">x50</option>
+          <option value="75">x75</option>
+          <option value="100">x100</option>
+          <option value="125">x125</option>
+        </select>
+
+        <label>Giá</label>
+        <input id="orderPrice" placeholder="Tự động" disabled />
+
+        <label>Số lượng</label>
+        <div class="qty-stepper">
+          <button id="orderQtyDown" type="button" aria-label="Giam so luong">-</button>
+          <input id="orderQty" type="number" min="0" step="0.0001" placeholder="0" aria-label="So luong lenh" />
+          <button id="orderQtyUp" type="button" aria-label="Tang so luong">+</button>
+        </div>
+
+        <label>% vốn</label>
+        <div class="percent-row">
+          <input id="orderPercent" type="range" min="0" max="100" step="5" value="0" aria-label="Ti le von su dung" />
+          <span id="orderPercentLabel">0%</span>
+        </div>
+
+        <label>Stop-Loss</label>
+        <input id="orderStop" type="number" min="0" step="0.0001" placeholder="Tùy chọn" />
+
+        <label>Take-Profit</label>
+        <input id="orderTake" type="number" min="0" step="0.0001" placeholder="Tùy chọn" />
+
+        <label>Trailing Stop (%)</label>
+        <input id="orderTrail" type="number" min="0" step="0.1" placeholder="Ví dụ 2.5" />
+
+        <label>Tổng</label>
+        <div class="calc" id="orderTotal">0</div>
+
+        <label>Phí</label>
+        <div class="calc" id="orderFee">0</div>
+      </div>
+      <div class="order-preview" id="orderPreview">
+        <div class="order-preview-title">Xem truoc lenh</div>
+        <div class="order-preview-grid">
+          <div>Gia</div><div id="previewPrice">-</div>
+          <div>Don bay</div><div id="previewLeverage">-</div>
+          <div>Notional</div><div id="previewNotional">-</div>
+          <div>Truot gia</div><div id="previewSlippage">-</div>
+          <div>Phi</div><div id="previewFee">-</div>
+        </div>
+      </div>
+      <button class="cta" id="submitOrder" aria-label="Dat lenh">Đặt lệnh</button>
+      <div class="notice" id="orderNote">Số dư khả dụng sẽ bị trừ ngay khi khớp lệnh.</div>
+    </section>
+
+    <section class="panel wallet" id="panelWallet">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Ví & Tài sản</div>
+          <div class="panel-sub">VND / USD ảo trong game</div>
+        </div>
+      </div>
+      <div class="equity">
+        <div class="equity-title">Equity Curve</div>
+        <canvas id="equityChart" width="600" height="120"></canvas>
+      </div>
+      <div class="balance-grid">
+        <div class="balance-card">
+          <div class="balance-label">USD</div>
+          <div class="balance-value" id="usdBalance">0</div>
+        </div>
+        <div class="balance-card">
+          <div class="balance-label">VND</div>
+          <div class="balance-value" id="vndBalance">0</div>
+        </div>
+      </div>
+      <div class="portfolio" id="portfolioList"></div>
+      <div class="positions" id="positionsList"></div>
+      <div class="password-panel">
+        <div class="password-title">Đổi mật khẩu</div>
+        <div class="password-grid">
+          <input id="oldPassword" type="password" placeholder="Mật khẩu cũ" />
+          <input id="newPassword" type="password" placeholder="Mật khẩu mới" />
+          <input id="confirmPassword" type="password" placeholder="Nhập lại mật khẩu mới" />
+          <button id="changePasswordBtn" type="button">Cập nhật</button>
+        </div>
+        <div class="password-msg" id="passwordMsg"></div>
+      </div>
+    </section>
+
+    <section class="panel orders" id="panelOrders">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Lệnh chờ</div>
+          <div class="panel-sub">Lệnh giới hạn đang mở</div>
+        </div>
+      </div>
+      <div class="orders-list" id="openOrders"></div>
+    </section>
+
+    <section class="panel gamify">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Thành tựu & BXH</div>
+          <div class="panel-sub">Huy hiệu và kỷ lục cá nhân</div>
+        </div>
+      </div>
+      <div class="bot-panel">
+        <div class="bot-title">Sao chép giao dịch - Bot trader huyền thoại</div>
+        <div class="bot-list" id="botList"></div>
+      </div>
+      <div class="daily-checkin" id="dailyCheckin">
+        <div class="daily-title">Điểm danh hôm nay</div>
+        <div class="daily-sub" id="dailyCheckinSub">Chuỗi hiện tại: 0 ngày</div>
+        <div class="daily-row">
+          <button id="dailyCheckinBtn" type="button">Nhận thưởng</button>
+          <div class="daily-streak" id="dailyStreakBadge">0 ngày</div>
+        </div>
+        <div class="daily-next" id="dailyNextTime"></div>
+      </div>
+      <div class="mini-predict" id="miniPredict">
+        <div class="mini-title">Dự đoán nến tiếp theo</div>
+        <div class="mini-sub">Chọn xanh hoặc đỏ. Kết quả sau 5 giây.</div>
+        <div class="mini-row">
+          <button id="predictUpBtn" type="button">Xanh</button>
+          <button id="predictDownBtn" type="button">Đỏ</button>
+          <div class="mini-badge" id="predictStatus">Sẵn sàng</div>
+        </div>
+        <div class="mini-result" id="predictResult"></div>
+      </div>
+      <div class="spin-card" id="spinCard">
+        <div class="spin-title">Vòng quay may mắn</div>
+        <div class="spin-sub" id="spinStatus">Đăng nhập để quay.</div>
+        <div class="spin-wheel-wrap">
+          <div class="spin-wheel" id="spinWheel">
+            <div class="spin-label spin-label-0">+100$</div>
+            <div class="spin-label spin-label-1">+500$</div>
+            <div class="spin-label spin-label-2">X2 đòn bẩy</div>
+          </div>
+          <div class="spin-pointer"></div>
+        </div>
+        <button id="spinBtn" type="button">Quay</button>
+        <div class="spin-note" id="spinNote"></div>
+      </div>
+      <div class="career">
+        <div class="career-head">
+          <div class="career-title">Sự nghiệp Trader</div>
+          <div class="career-level">Cấp <span id="careerLevel">1</span></div>
+        </div>
+        <div class="xp-bar"><div id="xpFill"></div></div>
+        <div class="career-stats">
+          <div>XP: <span id="careerXp">0</span> / <span id="careerXpNext">0</span></div>
+          <div>Đòn bẩy tối đa: <span id="careerMaxLev">x50</span></div>
+          <div>Phí: <span id="careerFee">0.10%</span></div>
+          <div>Mở khóa: <span id="careerUnlocks">-</span></div>
+        </div>
+      </div>
+      <div class="booster-shop" id="boosterShop"></div>
+      <div class="booster-inv" id="boosterInventory"></div>
+      <div class="achievement-list" id="achievementList"></div>
+      <div class="leaderboard" id="leaderboard"></div>
+      <div class="leaderboard" id="weeklyLeaderboard"></div>
+      <div class="poll-card" id="bullBearPoll">
+        <div class="poll-title">Thị trường hôm nay?</div>
+        <div class="poll-sub">Bầu chọn Bull/Bear để nhận XP</div>
+        <div class="poll-bar">
+          <div class="poll-bull" id="pollBullBar"></div>
+          <div class="poll-bear" id="pollBearBar"></div>
+        </div>
+        <div class="poll-stats">
+          <span id="pollBullPct">50% Bull</span>
+          <span id="pollBearPct">50% Bear</span>
+        </div>
+        <div class="poll-actions">
+          <button id="pollBullBtn" type="button">Bull</button>
+          <button id="pollBearBtn" type="button">Bear</button>
+        </div>
+        <div class="poll-note" id="pollNote"></div>
+      </div>
+      <div class="tip-card" id="dailyTipCard">
+        <div class="tip-label">Tip nhanh</div>
+        <div class="tip-text" id="dailyTipText">...</div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+  <div class="undo-toast" id="undoToast" aria-live="polite">
+    <span id="undoText">Đã hủy lệnh.</span>
+    <button id="undoBtn" type="button">Hoàn tác</button>
+  </div>
+  <div class="broadcast-overlay hidden" id="broadcastOverlay">
+    <div class="broadcast-card">
+      <div class="broadcast-title">Thông báo từ Admin</div>
+      <div class="broadcast-message" id="broadcastMessage">...</div>
+      <div class="broadcast-timer" id="broadcastTimer"></div>
+    </div>
+  </div>
+  <div class="mail-overlay hidden" id="mailOverlay">
+    <div class="mail-card">
+      <div class="mail-header">
+        <div>
+          <div class="mail-title">Hộp thư</div>
+          <div class="mail-sub">Thông báo & phần thưởng từ Admin</div>
+        </div>
+        <button id="mailCloseBtn" type="button">Đóng</button>
+      </div>
+      <div class="mail-tools">
+        <select id="mailFilter" aria-label="Loc hop thu">
+          <option value="all">Tat ca</option>
+          <option value="admin">Admin</option>
+          <option value="reward">Thuong</option>
+          <option value="system">He thong</option>
+        </select>
+        <button id="mailMarkAll" type="button" aria-label="Danh dau da doc tat ca">Da doc het</button>
+        <button id="mailMute" type="button" aria-label="Tat thong bao trong 1 gio">Mute 1h</button>
+      </div>
+      <div class="mail-section">
+        <div class="mail-section-title">Thông báo / Code</div>
+        <div id="mailList" class="mail-list"></div>
+      </div>
+      <div class="mail-section">
+        <div class="mail-section-title">Túi đồ</div>
+        <div id="inventoryList" class="mail-list"></div>
+        <div class="mail-section-title">Buff đang hoạt động</div>
+        <div id="activeBuffList" class="mail-list"></div>
+      </div>
+    </div>
+  </div>
+  <div class="liquidation-overlay" id="liquidationOverlay">
+    <div class="liquidation-text">BỊ THANH LÝ</div>
+    <div class="liquidation-sub">Ký quỹ không đủ, vị thế bị thanh lý</div>
+  </div>
+  <div class="quick-actions" id="quickActions">
+    <button id="quickBuyBtn" type="button" aria-label="Mua nhanh">Mua nhanh</button>
+    <button id="quickSellBtn" type="button" aria-label="Ban nhanh">Bán nhanh</button>
+    <button id="quickCancelBtn" type="button" aria-label="Huy lenh gan nhat">Hủy lệnh gần nhất</button>
+  </div>
+  <div class="confirm-overlay hidden" id="logoutOverlay">
+    <div class="confirm-card">
+      <div class="confirm-title">Đăng xuất?</div>
+      <div class="confirm-sub">Bạn chắc chắn muốn đăng xuất?</div>
+      <div class="confirm-actions">
+        <button id="logoutConfirmBtn" type="button">Đăng xuất</button>
+        <button id="logoutCancelBtn" type="button">Hủy</button>
+      </div>
+    </div>
+  </div>
+  <div class="admin-modal hidden" id="adminModal">
+    <div class="admin-modal-card">
+      <div class="admin-modal-title" id="adminModalTitle">Xac nhan</div>
+      <div class="admin-modal-text" id="adminModalText"></div>
+      <input id="adminModalInput" class="admin-modal-input" type="text" />
+      <div class="admin-modal-actions">
+        <button id="adminModalCancel" type="button">Huy</button>
+        <button id="adminModalOk" type="button">Xac nhan</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="godPanel" class="god-panel hidden">
+    <h3>Điều khiển Admin ⚡</h3>
+    <div class="god-grid">
+      <button onclick="triggerGodMode('CRASH')">📉 Sập thị trường</button>
+      <button onclick="triggerGodMode('PUMP_BTC')">🚀 Bơm giá</button>
+      <button onclick="triggerGodMode('FREEZE')">❄️ Đóng băng</button>
+      <button onclick="triggerGodMode('CALM')">😌 Hạ nhiệt</button>
+      <button onclick="resetSimulation()">↻ Đặt lại mô phỏng</button>
+    </div>
+    <label>Biến động: <input type="range" id="volRange" min="1" max="100" value="10"></label>
+    <div class="god-set">
+      <input type="number" id="godPrice" placeholder="Đặt giá (USD)" step="0.0001" />
+      <button onclick="triggerGodMode('SET_PRICE')">Đặt giá</button>
+    </div>
+  </div>
+  <div id="adminPanel" class="admin-panel hidden">
+    <div class="admin-header" id="adminHeader">
+      <div class="admin-title">Quản trị hệ thống</div>
+      <div class="admin-header-actions">
+        <button id="adminFullBtn" type="button">Toàn màn hình</button>
+        <button id="adminResetPos" type="button">Về góc</button>
+      </div>
+    </div>
+    <div class="admin-kpi">
+      <div class="admin-kpi-card">
+        <div class="admin-kpi-label">Online</div>
+        <div class="admin-kpi-value" id="adminKpiOnline">0</div>
+      </div>
+      <div class="admin-kpi-card">
+        <div class="admin-kpi-label">Lệnh chờ</div>
+        <div class="admin-kpi-value" id="adminKpiOrders">0</div>
+      </div>
+      <div class="admin-kpi-card">
+        <div class="admin-kpi-label">Volume 24h</div>
+        <div class="admin-kpi-value" id="adminKpiVolume">$0</div>
+      </div>
+      <div class="admin-kpi-card">
+        <div class="admin-kpi-label">PnL mở</div>
+        <div class="admin-kpi-value" id="adminKpiPnl">$0</div>
+      </div>
+    </div>
+    <div class="admin-grid">
+      <input type="text" id="adminTarget" placeholder="Tài khoản" />
+      <select id="adminCurrency">
+        <option value="USD">USD</option>
+        <option value="VND">VND</option>
+      </select>
+      <input type="number" id="adminAmount" placeholder="Số tiền" step="0.0001" />
+      <button id="adminSetBtn" type="button">Cập nhật số dư</button>
+      <button id="adminRefreshBtn" type="button">Làm mới danh sách</button>
+    </div>
+    <div class="admin-section">
+      <div class="admin-section-title">Phát thông báo / Hộp thư</div>
+      <div class="admin-grid admin-broadcast">
+        <textarea id="adminBroadcastMsg" placeholder="Nội dung thông báo toàn hệ thống"></textarea>
+        <input type="number" id="adminBroadcastDuration" placeholder="Hiển thị (giây)" step="1" value="30" />
+        <button id="adminBroadcastBtn" type="button">Phát thông báo</button>
+      </div>
+      <div class="admin-grid admin-mail">
+        <input type="text" id="adminMailTarget" placeholder="User nhận (để trống = tất cả)" />
+        <input type="text" id="adminMailTitle" placeholder="Tiêu đề thư" />
+        <textarea id="adminMailMessage" placeholder="Nội dung thư / code"></textarea>
+        <input type="number" id="adminMailUsd" placeholder="USD tặng" step="0.01" />
+        <input type="number" id="adminMailVnd" placeholder="VND tặng" step="1000" />
+        <input type="text" id="adminMailCoin" placeholder="Coin (ví dụ BTC)" />
+        <input type="number" id="adminMailCoinQty" placeholder="Số lượng coin" step="0.0001" />
+        <input type="number" id="adminMailBoostInsurance" placeholder="Thẻ bảo hiểm" step="1" />
+        <input type="number" id="adminMailBoostAnonymity" placeholder="Thẻ ẩn danh" step="1" />
+        <input type="text" id="adminMailItemName" placeholder="Tên vật phẩm" />
+        <input type="text" id="adminMailItemDesc" placeholder="Mô tả vật phẩm" />
+        <select id="adminMailItemType">
+          <option value="buff">Buff tiêu hao</option>
+          <option value="boost_insurance">Thẻ bảo hiểm</option>
+          <option value="boost_anonymity">Thẻ ẩn danh</option>
+        </select>
+        <input type="number" id="adminMailItemDuration" placeholder="Thời hạn (phút, 0=vĩnh viễn)" step="1" value="0" />
+        <button id="adminMailSendBtn" type="button">Gửi hộp thư</button>
+      </div>
+    </div>
+    <div class="admin-grid" id="adminPriceControls">
+      <select id="adminCoinSelect"></select>
+      <input type="number" id="adminCoinPercent" placeholder="% tăng/giảm" step="0.1" />
+      <button id="adminCoinUpBtn" type="button">Tăng %</button>
+      <button id="adminCoinDownBtn" type="button">Giảm %</button>
+      <input type="number" id="adminCoinSet" placeholder="Giá mới (USD)" step="0.0001" />
+      <button id="adminCoinSetBtn" type="button">Đặt giá</button>
+    </div>
+    <div class="admin-preview" id="adminPricePreview">Xem trước: -</div>
+    <div class="admin-section">
+      <div class="admin-section-title">Dieu khien nen (admin)</div>
+      <div class="admin-grid admin-candle" id="adminCandleControls">
+        <select id="adminCandleSymbol"></select>
+        <select id="adminCandleDirection">
+          <option value="up">Nen tang</option>
+          <option value="down">Nen giam</option>
+          <option value="side">Nen di ngang</option>
+        </select>
+        <input type="number" id="adminCandleStrength" placeholder="% than nen" step="0.1" value="0.8" />
+        <input type="number" id="adminCandleWick" placeholder="% bong nen" step="0.1" value="0.4" />
+        <input type="number" id="adminCandleDuration" placeholder="Thoi gian (giay)" step="1" value="30" />
+        <label class="admin-check"><input type="checkbox" id="adminCandleAll" /> Ap dung tat ca coin</label>
+        <button id="adminCandleApply" type="button">Ap dung nen</button>
+      </div>
+    </div>
+    <div class="admin-filters">
+      <input type="number" id="adminMinBalance" placeholder="Số dư tối thiểu (USD)" step="0.01" />
+      <input type="number" id="adminNewDays" placeholder="Tài khoản mới (ngày)" step="1" />
+      <label class="admin-check"><input type="checkbox" id="adminFilterLocked" /> Bị khóa</label>
+      <label class="admin-check"><input type="checkbox" id="adminFilterDeleted" /> Đã xóa</label>
+      <label class="admin-check"><input type="checkbox" id="adminFilterNew" /> Mới tạo</label>
+      <label class="admin-check"><input type="checkbox" id="adminFilterAdmin" /> Quản trị</label>
+    </div>
+    <div class="admin-settings">
+      <label class="admin-check"><input type="checkbox" id="adminRegOpen" /> Mở đăng ký</label>
+      <label class="admin-check"><input type="checkbox" id="adminInviteOnly" /> Chỉ mã mời</label>
+      <input type="text" id="adminInviteCode" placeholder="Mã mời" />
+      <button id="adminInviteAdd" type="button">Thêm mã</button>
+      <button id="adminInviteRemove" type="button">Xóa mã</button>
+      <input type="text" id="adminBlockIp" placeholder="IP chặn (vd 1.2.3.*)" />
+      <button id="adminBlockIpBtn" type="button">Chặn IP</button>
+      <button id="adminUnblockIpBtn" type="button">Bỏ chặn IP</button>
+      <input type="text" id="adminWhitelistIp" placeholder="IP admin được phép" />
+      <button id="adminWhitelistIpBtn" type="button">Cho phép IP</button>
+      <button id="adminUnwhitelistIpBtn" type="button">Gỡ IP</button>
+    </div>
+    <div class="admin-advanced">
+      <div id="adminAdvancedSuper">
+        <div class="danger-zone">
+          <div class="danger-title">Khu vực nguy hiểm</div>
+          <div class="danger-sub">Các thao tác có thể ảnh hưởng toàn hệ thống.</div>
+          <div class="admin-settings admin-advanced-grid">
+        <label class="admin-check"><input type="checkbox" id="adminMaintenance" /> Chế độ bảo trì</label>
+        <label class="admin-check"><input type="checkbox" id="adminOrderDisabled" /> Tắt đặt lệnh</label>
+        <label class="admin-check"><input type="checkbox" id="adminMarginEnabled" /> Cho phép margin</label>
+        <label class="admin-check"><input type="checkbox" id="adminBlockStale" /> Chặn giá stale</label>
+        <label class="admin-check"><input type="checkbox" id="adminMarketFreeze" /> Đóng băng thị trường</label>
+        <label class="admin-check"><input type="checkbox" id="adminWithdrawDisabled" /> Tắt rút tiền</label>
+        <label class="admin-check"><input type="checkbox" id="adminDepositDisabled" /> Tắt nạp tiền</label>
+        <label class="admin-check"><input type="checkbox" id="adminSafeMode" /> Chế độ an toàn</label>
+        <label class="admin-check"><input type="checkbox" id="adminReadOnly" /> Admin chỉ đọc</label>
+        <input type="number" id="adminSlippage" placeholder="Trượt giá (%)" step="0.01" />
+        <button id="adminSetSlippage" type="button">Cập nhật trượt giá</button>
+        <input type="number" id="adminCancelPenalty" placeholder="Phí phạt hủy" step="0.0001" />
+        <button id="adminSetCancelPenalty" type="button">Cập nhật phạt hủy</button>
+        <input type="number" id="adminStrikeLimit" placeholder="Giới hạn strike" step="1" />
+        <button id="adminSetStrikeLimit" type="button">Cập nhật giới hạn strike</button>
+        <input type="text" id="adminGroupFeeGroup" placeholder="Nhóm (VIP/test...)" />
+        <input type="number" id="adminGroupFeeRate" placeholder="Fee theo nhóm" step="0.0001" />
+        <button id="adminSetGroupFee" type="button">Cập nhật fee nhóm</button>
+        <input type="text" id="adminAlertWebhook" placeholder="Webhook cảnh báo" />
+        <button id="adminSetAlertWebhook" type="button">Cập nhật webhook</button>
+        <input type="number" id="adminAccessStart" placeholder="Admin giờ bắt đầu (0-23)" step="1" />
+        <input type="number" id="adminAccessEnd" placeholder="Admin giờ kết thúc (0-24)" step="1" />
+        <button id="adminSetAccessHours" type="button">Cập nhật giờ admin</button>
+        <input type="number" id="adminIdleMs" placeholder="Idle timeout (ms)" step="1000" />
+        <button id="adminSetIdleMs" type="button">Cập nhật idle</button>
+        <input type="number" id="adminSessionMs" placeholder="Session timeout (ms)" step="1000" />
+        <button id="adminSetSessionMs" type="button">Cập nhật session</button>
+        <input type="number" id="adminRateSuper" placeholder="Giới hạn super" step="1" />
+        <input type="number" id="adminRateMod" placeholder="Giới hạn mod" step="1" />
+        <input type="number" id="adminRateAuth" placeholder="Giới hạn auth" step="1" />
+        <button id="adminSetRateLimits" type="button">Cập nhật giới hạn</button>
+        <input type="number" id="adminLogRetention" placeholder="Giữ log (ngày)" step="1" />
+        <button id="adminSetLogRetention" type="button">Cập nhật giữ log</button>
+        <button id="adminRunLogCleanup" type="button">Dọn log</button>
+        <input type="text" id="adminSourceWhitelist" placeholder="Nguồn giá cho phép (binance,coingecko,sim)" />
+        <button id="adminSetSourceWhitelist" type="button">Cập nhật nguồn</button>
+        <input type="text" id="adminCoinVisibilitySymbol" placeholder="Coin ẩn/hiện (mã)" />
+        <label class="admin-check"><input type="checkbox" id="adminCoinVisible" /> Hiển thị coin</label>
+        <button id="adminSetCoinVisibility" type="button">Cập nhật hiển thị</button>
+        <input type="text" id="adminAddCoinSymbol" placeholder="Mã coin mới" />
+        <input type="text" id="adminAddCoinName" placeholder="Tên coin" />
+        <input type="number" id="adminAddCoinBase" placeholder="Giá base" step="0.0001" />
+        <input type="number" id="adminAddCoinVol" placeholder="Độ biến động" step="0.0001" />
+        <button id="adminAddCoinBtn" type="button">Thêm coin</button>
+        <input type="text" id="adminRemoveCoinSymbol" placeholder="Xóa coin (mã)" />
+        <button id="adminRemoveCoinBtn" type="button">Xóa coin</button>
+        <input type="text" id="adminCoinLimitSymbol" placeholder="Giới hạn coin (mã)" />
+        <input type="number" id="adminCoinMinQty" placeholder="Số lượng tối thiểu" step="0.0001" />
+        <input type="number" id="adminCoinMaxQty" placeholder="Số lượng tối đa" step="0.0001" />
+        <input type="number" id="adminCoinPrecision" placeholder="Độ chính xác (0-8)" step="1" />
+        <button id="adminSetCoinLimits" type="button">Cập nhật giới hạn coin</button>
+        <button id="adminBackupDbBtn" type="button">Sao lưu DB</button>
+        <input type="text" id="adminRestorePath" placeholder="Đường dẫn khôi phục" />
+        <button id="adminRestoreDbBtn" type="button">Khôi phục DB</button>
+          </div>
+        </div>
+        <h3>Điều khiển coin nâng cao</h3>
+        <div class="admin-settings admin-advanced-grid">
+        <label class="admin-check"><input type="checkbox" id="adminCoinFreeze" /> Đóng băng coin đang chọn</label>
+        <input type="number" id="adminCoinLockPrice" placeholder="Khóa giá (USD)" step="0.0001" />
+        <input type="number" id="adminCoinLockSeconds" placeholder="Thời gian khóa (giây)" step="1" />
+        <button id="adminCoinLockBtn" type="button">Khóa giá coin</button>
+        <select id="adminCoinSource">
+          <option value="">Nguồn giá mặc định</option>
+          <option value="binance">Binance</option>
+          <option value="coingecko">CoinGecko</option>
+          <option value="sim">Sim</option>
+        </select>
+        <button id="adminCoinSourceBtn" type="button">Cập nhật nguồn</button>
+        <input type="number" id="adminCoinVolScale" placeholder="Hệ số biến động coin" step="0.1" />
+        <button id="adminCoinVolBtn" type="button">Cập nhật biến động</button>
+        <input type="number" id="adminCoinCircuitPct" placeholder="Cầu chì (%)" step="0.1" />
+        <button id="adminCoinCircuitBtn" type="button">Cập nhật cầu chì</button>
+        </div>
+      </div>
+      <div id="adminAdvancedStats">
+        <h3>Thống kê & báo cáo</h3>
+        <div class="admin-settings admin-advanced-grid">
+        <button id="adminStatsSpam" type="button">Spam lệnh</button>
+        <button id="adminStatsDailyPnl" type="button">PnL theo ngày</button>
+        <button id="adminStatsTopUsers" type="button">Top user PnL</button>
+        <button id="adminStatsTopCoins" type="button">Top khối lượng coin</button>
+        <button id="adminStatsOpenInterest" type="button">Hợp đồng mở</button>
+        <button id="adminStatsOnline" type="button">Người dùng online</button>
+        <button id="adminStatsApprovals" type="button">Hàng chờ duyệt</button>
+        <button id="adminStatsApprovalsByAction" type="button">Duyệt theo hành động</button>
+        <button id="adminStatsAdminLog" type="button">Nhật ký admin</button>
+        <button id="adminStatsModerator" type="button">Thống kê moderator</button>
+        <button id="adminStatsDb" type="button">Trạng thái DB</button>
+        <button id="adminStatsWeekly" type="button">Báo cáo tuần</button>
+        <button id="adminStatsHeatmap" type="button">Bản đồ nhiệt spam</button>
+        <button id="adminStatsCoins" type="button">Danh sách coin</button>
+        </div>
+        <div class="admin-settings admin-advanced-grid">
+        <input type="text" id="adminComplaintUser" placeholder="User khiếu nại" />
+        <input type="text" id="adminComplaintNote" placeholder="Nội dung khiếu nại" />
+        <button id="adminComplaintAdd" type="button">Tạo khiếu nại</button>
+        <button id="adminComplaintList" type="button">Danh sách khiếu nại</button>
+        <input type="text" id="adminComplaintId" placeholder="Mã khiếu nại" />
+        <input type="text" id="adminComplaintNoteAdd" placeholder="Ghi chú" />
+        <button id="adminComplaintNoteBtn" type="button">Thêm ghi chú</button>
+        <button id="adminComplaintResolve" type="button">Đóng khiếu nại</button>
+        </div>
+        <div class="admin-settings admin-advanced-grid">
+        <button id="adminIncidentLoad" type="button">Checklist sự cố</button>
+        <input type="text" id="adminIncidentId" placeholder="Mã checklist" />
+        <button id="adminIncidentToggle" type="button">Đổi trạng thái</button>
+        <textarea id="adminIncidentJson" placeholder="JSON checklist (nhãn/hoàn thành)" rows="3"></textarea>
+        <button id="adminIncidentSave" type="button">Lưu checklist</button>
+        </div>
+        <div class="admin-settings admin-advanced-grid">
+        <input type="text" id="adminTradeTarget" placeholder="User cần xem trades" />
+        <input type="number" id="adminTradeLimit" placeholder="Giới hạn giao dịch" step="1" />
+        <button id="adminTradeFetch" type="button">Xem trades</button>
+        <button id="adminTradeExport" type="button">Xuất CSV</button>
+        </div>
+        <div class="admin-settings admin-advanced-grid">
+        <input type="text" id="adminActionTarget" placeholder="User mục tiêu" />
+        <input type="text" id="adminCancelOrderId" placeholder="Mã lệnh cần hủy" />
+        <button id="adminCancelOrderBtn" type="button">Hủy lệnh (admin)</button>
+        <button id="adminResetOrdersBtn" type="button">Đặt lại lệnh chờ</button>
+        <button id="adminResetPositionsBtn" type="button">Đặt lại vị thế</button>
+        <button id="adminImpersonateBtn" type="button">Giả mạo đăng nhập</button>
+        <button id="adminStopImpersonateBtn" type="button">Dừng giả mạo</button>
+        </div>
+        <div class="admin-output">
+        <div class="admin-output-title" id="adminStatsTitle">Kết quả</div>
+        <div class="admin-log-tools">
+          <input type="text" id="adminLogSearch" placeholder="Loc theo tu khoa" aria-label="Tim trong lich su admin" />
+          <select id="adminLogRole" aria-label="Loc theo vai tro admin">
+            <option value="all">Tat ca role</option>
+            <option value="super_admin">Super admin</option>
+            <option value="moderator">Moderator</option>
+          </select>
+          <input type="text" id="adminLogAction" placeholder="Loc action" aria-label="Loc theo hanh dong admin" />
+        </div>
+        <div class="admin-output-actions">
+          <button id="adminOutputBack" type="button">Quay lại</button>
+          <button id="adminOutputShowAll" type="button">Hiện tất cả</button>
+          <button id="adminCloseBtn" type="button">Đóng admin</button>
+        </div>
+        <pre id="adminStatsOutput">Chưa có dữ liệu.</pre>
+        </div>
+      </div>
+    </div>
+    <input type="text" id="adminSearch" class="admin-search" placeholder="Tìm theo username/email/ID" />
+    <div class="admin-list" id="adminUserList"></div>
+  </div>
+  <div class="mobile-bar" id="mobileBar">
+    <button type="button" data-target="#panelMarket">Thi truong</button>
+    <button type="button" data-target="#panelChart">Bieu do</button>
+    <button type="button" data-target="#panelOrder">Dat lenh</button>
+    <button type="button" data-target="#panelWallet">Vi</button>
+    <button type="button" data-target="#panelOrders">Lenh cho</button>
+  </div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const auth = document.getElementById("authOverlay");
+      const onboarding = document.getElementById("onboardingOverlay");
+      if (auth) auth.classList.remove("hidden");
+      if (onboarding) onboarding.classList.remove("hidden");
+    });
+  </script>
+  <script src="app.js"></script>
+  <script>
+    window.addEventListener("load", () => {
+      if (window.startOnboarding) window.startOnboarding();
+    });
+  </script>
+</body>
+</html>

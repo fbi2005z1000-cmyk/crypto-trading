@@ -1,0 +1,8 @@
+{"ts":"2026-02-06T10:53:13.065Z","admin":"admincta1009","role":"super_admin","action":"ADD_COIN","ip":"::ffff:127.0.0.1","changes":{"symbol":"CTA","name":"CRYPTO TRADING ARENA","base":1000,"vol":10}}
+{"ts":"2026-02-06T10:53:45.201Z","admin":"admincta1009","role":"super_admin","action":"SET_COIN_VISIBILITY","ip":"::ffff:127.0.0.1","changes":{"symbol":"CTA","visible":true}}
+{"ts":"2026-02-06T10:53:59.407Z","admin":"admincta1009","role":"super_admin","action":"SET_RATE_LIMITS","ip":"::ffff:127.0.0.1","changes":{"super":5,"mod":3,"auth":5}}
+{"ts":"2026-02-06T10:54:00.124Z","admin":"admincta1009","role":"super_admin","action":"SET_LOG_RETENTION","ip":"::ffff:127.0.0.1","changes":{"days":30}}
+{"ts":"2026-02-06T10:54:02.449Z","admin":"admincta1009","role":"super_admin","action":"SET_ADMIN_ACCESS_HOURS","ip":"::ffff:127.0.0.1","changes":{"start":0,"end":24}}
+{"ts":"2026-02-06T10:54:29.228Z","admin":"admincta1009","role":"super_admin","action":"SET_COIN_LIMITS","ip":"::ffff:127.0.0.1","changes":{"symbol":"1000000000000","limits":{"minQty":1,"maxQty":1000000000000,"precision":5}}}
+{"ts":"2026-02-06T10:54:42.896Z","admin":"admincta1009","role":"super_admin","action":"SET_SOURCE_WHITELIST","ip":"::ffff:127.0.0.1","changes":{"sources":["binance","coingecko","sim"]}}
+{"ts":"2026-02-07T09:58:08.851Z","admin":"admincta1009","role":"super_admin","action":"SET_ADMIN_READONLY","ip":"::ffff:127.0.0.1","changes":{"enabled":true}}

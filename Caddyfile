@@ -1,0 +1,6 @@
+# Replace example.com with your real domain.
+# Caddy will auto-issue TLS certificates.
+example.com {
+  encode gzip
+  reverse_proxy localhost:3000
+}

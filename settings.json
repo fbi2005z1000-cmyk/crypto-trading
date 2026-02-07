@@ -1,0 +1,68 @@
+{
+  "registrationOpen": true,
+  "inviteOnly": false,
+  "maintenanceMode": false,
+  "orderDisabled": false,
+  "marginEnabled": false,
+  "marketFreeze": false,
+  "blockStalePrice": false,
+  "slippagePct": 0,
+  "strikeLimit": 3,
+  "cancelPenaltyRate": 0.002,
+  "circuitBreakerPct": 20,
+  "circuitBreakerWindowMs": 60000,
+  "alertWebhook": "",
+  "withdrawalsDisabled": false,
+  "depositsDisabled": false,
+  "logRetentionDays": 30,
+  "adminAccessHours": {
+    "start": 0,
+    "end": 24
+  },
+  "adminIdleMs": 600000,
+  "adminSessionMs": 3600000,
+  "adminReadOnly": true,
+  "safeMode": false,
+  "adminRateLimits": {
+    "super": 5,
+    "mod": 3,
+    "auth": 5
+  },
+  "sourceWhitelist": [
+    "binance",
+    "coingecko",
+    "sim"
+  ],
+  "coinVisibility": {
+    "CTA": true
+  },
+  "customCoins": [
+    {
+      "symbol": "CTA",
+      "name": "CRYPTO TRADING ARENA",
+      "base": 1000,
+      "vol": 10
+    }
+  ],
+  "removedCoins": [],
+  "coinLimits": {
+    "1000000000000": {
+      "minQty": 1,
+      "maxQty": 1000000000000,
+      "precision": 5
+    }
+  },
+  "incidentChecklist": [],
+  "groupFees": {},
+  "coinSource": {},
+  "coinFreeze": {
+    "BTC": false
+  },
+  "coinLock": {},
+  "coinVolScale": {
+    "BTC": 100
+  },
+  "coinCircuit": {
+    "BTC": 10
+  }
+}
