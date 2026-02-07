@@ -4424,13 +4424,17 @@ function renderPositions() {
 
 function totalEquityUSD() {
   const spotValue = Object.entries(state.holdings).reduce((sum, [symbol, qty]) => {
-    return sum + qty * state.market[symbol].price;
+    const data = state.market?.[symbol];
+    if (!data || !Number.isFinite(data.price)) return sum;
+    return sum + qty * data.price;
   }, 0);
   const marginValue = state.positions.reduce((sum, pos) => {
     return sum + (pos.quote === "USD" ? pos.margin : pos.margin / FX_RATE);
   }, 0);
   const positionsPnl = state.positions.reduce((sum, pos) => {
-    const price = state.market[pos.symbol].price;
+    const data = state.market?.[pos.symbol];
+    if (!data || !Number.isFinite(data.price)) return sum;
+    const price = data.price;
     const pnl = pos.side === "buy"
       ? (price - pos.entry) * pos.qty * pos.leverage
       : (pos.entry - price) * pos.qty * pos.leverage;
