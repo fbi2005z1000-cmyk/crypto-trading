@@ -84,7 +84,12 @@ if (!ADMIN_PASSWORD || !ADMIN_OWNER_USER || !ADMIN_OWNER_PASS || !ADMIN_OWNER_CO
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  cors: {
+    origin: true,
+    credentials: true
+  }
+});
 
 app.use(express.static(path.join(__dirname), {
   setHeaders(res, filePath) {

@@ -179,7 +179,11 @@ const clientId = (() => {
 let socket = null;
 try {
   if (typeof io !== "undefined") {
-    socket = io();
+    socket = io({
+      path: "/socket.io",
+      transports: ["websocket", "polling"],
+      withCredentials: true
+    });
   } else {
     console.warn("Socket.io không tìm thấy - Chạy chế độ Offline");
   }
