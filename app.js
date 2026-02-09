@@ -227,7 +227,16 @@ const state = {
   positions: [],
   protections: [],
   liveSymbols: new Set(),
-  indicators: { ma14: true, ma50: false, rsi: false, bb: false, macd: false },
+  indicators: {
+    ma14: true,
+    ma50: false,
+    rsi: false,
+    bb: false,
+    macd: false,
+    ema9: false,
+    ema21: false,
+    ma200: false
+  },
   volBoosts: {},
   newsItems: [],
   macro: {
@@ -263,6 +272,7 @@ const state = {
   mailFilter: "all",
   muteUntil: 0,
   perfMode: false,
+  compactMode: false,
   crosshair: { active: false, slot: -1, x: 0, y: 0, price: 0, candle: null }
 };
 
@@ -272,11 +282,13 @@ let adminLogRaw = [];
 let orderNoteDefault = "";
 let adminModalState = { resolve: null };
 let mailReadMap = {};
+let todayAssist = { viewChart: false, demoOrder: false, sampleSLTP: false };
 const AUTH_USER_KEY = "cta_auth_user";
 const AUTH_REFRESH_KEY = "cta_auth_refresh";
 const AUTH_REMEMBER_KEY = "cta_auth_remember";
 const ONBOARDING_KEY = "cta_onboarding_v1";
 const MAIL_READ_KEY = "cta_mail_read_v1";
+const TODAY_ASSIST_KEY_PREFIX = "cta_today_assist_";
 const MOBILE_BREAKPOINT = 900;
 const CHART_MIN_VISIBLE = 20;
 const CHART_MAX_VISIBLE = 600;
@@ -1743,6 +1755,12 @@ const els = {
   tickerTrack: document.getElementById("tickerTrack"),
   newsTrack: document.getElementById("newsTrack"),
   themeToggle: document.getElementById("themeToggle"),
+  compactToggle: document.getElementById("compactToggle"),
+  todayAssist: document.getElementById("todayAssist"),
+  assistDone: document.getElementById("assistDone"),
+  assistViewChart: document.getElementById("assistViewChart"),
+  assistDemoOrder: document.getElementById("assistDemoOrder"),
+  assistSampleSLTP: document.getElementById("assistSampleSLTP"),
   logoutBtn: document.getElementById("logoutBtn"),
   bgCanvas: document.getElementById("bgParticles"),
   chartArea: document.getElementById("chartArea"),
@@ -3131,7 +3149,8 @@ function saveLocal() {
     tradeVolumeUsd: state.tradeVolumeUsd,
     risk: state.risk,
     marketRegime: state.marketRegime,
-    chartPoints: state.chartPoints
+    chartPoints: state.chartPoints,
+    compactMode: !!state.compactMode
   };
 
   localStorage.setItem("cryptoGameSave_UI_v1", JSON.stringify(saveData));
@@ -3157,12 +3176,120 @@ function loadLocal() {
       document.body.dataset.theme = data.theme;
       if (els.themeToggle) els.themeToggle.textContent = data.theme === "light" ? "Chế độ tối" : "Chế độ sáng";
     }
+    if (typeof data.compactMode === "boolean") {
+      setCompactMode(data.compactMode);
+    }
 
     return true;
   } catch (e) {
     console.error("Loi load save:", e);
     return false;
   }
+}
+
+function setCompactMode(enabled) {
+  state.compactMode = !!enabled;
+  document.body.classList.toggle("compact", state.compactMode);
+  if (els.compactToggle) {
+    els.compactToggle.textContent = state.compactMode ? "Giao diện đầy đủ" : "Gọn giao diện";
+  }
+}
+
+function getTodayAssistKey() {
+  return `${TODAY_ASSIST_KEY_PREFIX}${getDateKey()}`;
+}
+
+function loadTodayAssist() {
+  try {
+    const raw = localStorage.getItem(getTodayAssistKey());
+    if (raw) {
+      const data = JSON.parse(raw);
+      todayAssist = {
+        viewChart: !!data.viewChart,
+        demoOrder: !!data.demoOrder,
+        sampleSLTP: !!data.sampleSLTP
+      };
+    } else {
+      todayAssist = { viewChart: false, demoOrder: false, sampleSLTP: false };
+    }
+  } catch {
+    todayAssist = { viewChart: false, demoOrder: false, sampleSLTP: false };
+  }
+  renderTodayAssist();
+}
+
+function saveTodayAssist() {
+  try {
+    localStorage.setItem(getTodayAssistKey(), JSON.stringify(todayAssist));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function renderTodayAssist() {
+  if (!els.todayAssist) return;
+  const items = els.todayAssist.querySelectorAll(".assist-item");
+  items.forEach((row) => {
+    const key = row.dataset.assist;
+    row.classList.toggle("done", !!todayAssist[key]);
+  });
+  const doneCount = Object.values(todayAssist).filter(Boolean).length;
+  if (els.assistDone) els.assistDone.textContent = `${doneCount}/3`;
+}
+
+function markTodayAssist(key) {
+  if (!key || typeof todayAssist[key] === "undefined") return;
+  if (!todayAssist[key]) {
+    todayAssist[key] = true;
+    saveTodayAssist();
+    renderTodayAssist();
+  }
+}
+
+function runAssistViewChart() {
+  const chartPanel = document.getElementById("panelChart");
+  if (chartPanel && chartPanel.scrollIntoView) {
+    chartPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  markTodayAssist("viewChart");
+}
+
+function runAssistDemoOrder() {
+  const btnLong = document.getElementById("btnLong");
+  if (btnLong) btnLong.click();
+  if (els.orderType) {
+    els.orderType.value = "market";
+    if (els.orderPrice) els.orderPrice.disabled = true;
+  }
+  if (els.orderLeverage) {
+    els.orderLeverage.value = "1";
+    state.leverage = 1;
+  }
+  applyOrderPercent(10);
+  updateOrderInputs();
+  showToast("Đã chuẩn bị lệnh demo 10% vốn.");
+  markTodayAssist("demoOrder");
+}
+
+function runAssistSampleSLTP() {
+  const basePrice = state.market[state.selected]?.price;
+  if (!Number.isFinite(basePrice) || basePrice <= 0) {
+    showToast("Chưa có giá để đặt SL/TP.");
+    return;
+  }
+  const side = state.side === "sell" ? "sell" : "buy";
+  const stopUsd = side === "buy" ? basePrice * 0.99 : basePrice * 1.01;
+  const takeUsd = side === "buy" ? basePrice * 1.02 : basePrice * 0.98;
+  const stopQuote = toQuote(stopUsd);
+  const takeQuote = toQuote(takeUsd);
+  const fmtQuote = (value) => (state.quote === "USD"
+    ? value.toFixed(2)
+    : Math.round(value).toString());
+  if (els.orderStop) els.orderStop.value = fmtQuote(stopQuote);
+  if (els.orderTake) els.orderTake.value = fmtQuote(takeQuote);
+  updateOrderCalc();
+  showToast("Đã áp dụng SL/TP mẫu 1%/2%.");
+  markTodayAssist("sampleSLTP");
 }
 
 function ensureAllCoinsState() {
@@ -4946,7 +5073,7 @@ function updateIndicatorButtons() {
   const unlocked = new Set(state.career.unlocks);
   document.querySelectorAll(".time-btn.ind").forEach((btn) => {
     const key = btn.dataset.ind;
-    const isBase = key === "ma14" || key === "rsi";
+    const isBase = key === "ma14" || key === "rsi" || key === "ema9" || key === "ema21" || key === "ma200";
     const canUse = isBase || unlocked.has(key);
     btn.disabled = !canUse;
     btn.style.opacity = canUse ? "1" : "0.4";
@@ -6309,6 +6436,36 @@ function drawChartFor(canvas, symbol, lowerEnabled, slotIndex = 0) {
     ctx.stroke();
   }
 
+  if (state.indicators.ema9) {
+    const ema = calcEMA(closes, 9);
+    ctx.beginPath();
+    ema.forEach((value, idx) => {
+      if (idx < 8 || value == null) return;
+      const x = padding + idx * candleGap;
+      const y = priceToY(value);
+      if (idx === 0 || ema[idx - 1] == null) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = "rgba(66, 215, 255, 0.9)";
+    ctx.lineWidth = 1.1;
+    ctx.stroke();
+  }
+
+  if (state.indicators.ema21) {
+    const ema = calcEMA(closes, 21);
+    ctx.beginPath();
+    ema.forEach((value, idx) => {
+      if (idx < 20 || value == null) return;
+      const x = padding + idx * candleGap;
+      const y = priceToY(value);
+      if (idx === 0 || ema[idx - 1] == null) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = "rgba(255, 120, 190, 0.9)";
+    ctx.lineWidth = 1.1;
+    ctx.stroke();
+  }
+
   if (state.indicators.ma50) {
     const ma = calcMA(closes, 50);
     ctx.beginPath();
@@ -6321,6 +6478,21 @@ function drawChartFor(canvas, symbol, lowerEnabled, slotIndex = 0) {
     });
     ctx.strokeStyle = "rgba(255, 197, 110, 0.9)";
     ctx.lineWidth = 1.1;
+    ctx.stroke();
+  }
+
+  if (state.indicators.ma200) {
+    const ma = calcMA(closes, 200);
+    ctx.beginPath();
+    ma.forEach((value, idx) => {
+      if (value == null) return;
+      const x = padding + idx * candleGap;
+      const y = priceToY(value);
+      if (idx === 0 || ma[idx - 1] == null) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = "rgba(180, 180, 180, 0.75)";
+    ctx.lineWidth = 1;
     ctx.stroke();
   }
 
@@ -9408,6 +9580,15 @@ function bindEvents() {
     scheduleChartDraw();
   });
 
+  els.compactToggle?.addEventListener("click", () => {
+    setCompactMode(!state.compactMode);
+    saveLocal();
+  });
+
+  els.assistViewChart?.addEventListener("click", runAssistViewChart);
+  els.assistDemoOrder?.addEventListener("click", runAssistDemoOrder);
+  els.assistSampleSLTP?.addEventListener("click", runAssistSampleSLTP);
+
   const volRange = document.getElementById("volRange");
   if (volRange) {
     volRange.addEventListener("input", () => {
@@ -9435,6 +9616,8 @@ function init() {
   initMarket();
   initSocket();
   loadLocal();
+  setCompactMode(state.compactMode);
+  loadTodayAssist();
   state.weeklyLeaderboard = loadWeeklyLeaderboard();
   lastCareerLevel = state.career.level;
   setAuthState(null);

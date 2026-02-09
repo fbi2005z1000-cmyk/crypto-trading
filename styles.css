@@ -169,6 +169,38 @@ body[data-theme="light"] .orb {
   background: rgba(255, 255, 255, 0.14);
 }
 
+body.compact .topbar {
+  padding: calc(14px + var(--safe-top)) calc(20px + var(--safe-right)) 6px calc(20px + var(--safe-left));
+  gap: 12px;
+}
+
+body.compact .brand {
+  gap: 10px;
+}
+
+body.compact .logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+}
+
+body.compact .brand-title {
+  font-size: 16px;
+}
+
+body.compact .brand-sub {
+  font-size: 11px;
+}
+
+body.compact .status {
+  gap: 6px;
+}
+
+body.compact .pill {
+  padding: 6px 10px;
+  font-size: 11px;
+}
+
 .pill.god {
   border-color: rgba(255, 92, 122, 0.55);
   color: #ff5c7a;
@@ -302,6 +334,12 @@ body[data-theme="light"] .ticker-item {
     "market gamify gamify";
 }
 
+body.compact .main-grid {
+  gap: 10px;
+  padding: 8px calc(16px + var(--safe-right)) calc(24px + var(--safe-bottom)) calc(16px + var(--safe-left));
+  grid-template-rows: minmax(300px, auto) minmax(190px, auto) minmax(190px, auto) minmax(180px, auto) minmax(180px, auto);
+}
+
 .admin-reveal {
   position: fixed;
   right: calc(14px + var(--safe-right));
@@ -336,6 +374,11 @@ body[data-theme="light"] .ticker-item {
   gap: 12px;
   backdrop-filter: blur(16px);
   min-width: 0;
+}
+
+body.compact .panel {
+  padding: 12px;
+  gap: 8px;
 }
 
 .panel {
@@ -386,6 +429,152 @@ body[data-theme="light"] .panel {
   font-size: 12px;
   color: var(--muted);
   margin-top: 4px;
+}
+
+.today-assist {
+  background: linear-gradient(140deg, rgba(18, 25, 40, 0.92), rgba(9, 14, 24, 0.85));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.assist-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.assist-title {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.assist-sub {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.assist-progress {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.assist-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid transparent;
+}
+
+.assist-item.done {
+  border-color: rgba(62, 240, 183, 0.45);
+  background: rgba(62, 240, 183, 0.1);
+}
+
+.assist-label {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.assist-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.assist-btn {
+  padding: 4px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.assist-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.assist-check {
+  font-weight: 700;
+  color: rgba(62, 240, 183, 0.9);
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.assist-item.done .assist-check {
+  opacity: 1;
+  transform: scale(1);
+}
+
+body.compact .today-assist {
+  padding: 8px;
+  gap: 8px;
+}
+
+body.compact .assist-sub {
+  display: none;
+}
+
+body.compact .assist-label {
+  font-size: 11px;
+}
+
+body.compact .panel-title {
+  font-size: 14px;
+}
+
+body.compact .panel-sub {
+  display: none;
+}
+
+body.compact .controls {
+  gap: 6px;
+}
+
+body.compact .chip {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+body.compact .chart-toolbar {
+  gap: 6px;
+}
+
+body.compact .toolbar-group {
+  gap: 4px;
+}
+
+body.compact .time-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+body.compact .stats-row {
+  gap: 8px;
+  font-size: 11px;
+}
+
+body.compact .sentiment {
+  display: none;
+}
+
+body.compact .market-tools {
+  gap: 6px;
 }
 
 .controls {

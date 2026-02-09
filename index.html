@@ -87,6 +87,7 @@
       <div class="pill">Phí: <span id="feeRate">0.10%</span></div>
       <div class="pill user-rank hidden" id="userRank"></div>
       <button class="pill toggle" id="themeToggle" type="button" aria-label="Doi che do sang">Chế độ sáng</button>
+      <button class="pill toggle" id="compactToggle" type="button" aria-label="Gon giao dien">Gọn giao diện</button>
       <button class="pill toggle" id="academyBtn" type="button" aria-label="Mo hoc vien">Học viện</button>
       <button class="pill toggle mail-btn" id="mailBtn" type="button" aria-label="Mo hop thu">
         Hộp thư <span id="mailCount" class="mail-badge hidden">0</span>
@@ -176,8 +177,11 @@
           <button class="time-btn" data-tf="1d">1d</button>
         </div>
         <div class="toolbar-group">
+          <button class="time-btn ind" data-ind="ema9">EMA9</button>
+          <button class="time-btn ind" data-ind="ema21">EMA21</button>
           <button class="time-btn ind active" data-ind="ma14">MA14</button>
           <button class="time-btn ind" data-ind="ma50">MA50</button>
+          <button class="time-btn ind" data-ind="ma200">MA200</button>
           <button class="time-btn ind" data-ind="rsi">RSI</button>
           <button class="time-btn ind" data-ind="bb">BOLL</button>
           <button class="time-btn ind" data-ind="macd">MACD</button>
@@ -258,6 +262,36 @@
             <button class="tab active" data-side="buy" id="btnLong" aria-label="Mo lenh mua">Mua</button>
             <button class="tab" data-side="sell" id="btnShort" aria-label="Mo lenh ban">Bán</button>
           </div>
+      </div>
+      <div class="today-assist" id="todayAssist">
+        <div class="assist-head">
+          <div>
+            <div class="assist-title">Hôm nay làm gì?</div>
+            <div class="assist-sub">3 bước nhanh cho người mới</div>
+          </div>
+          <div class="assist-progress"><span id="assistDone">0/3</span></div>
+        </div>
+        <div class="assist-item" data-assist="viewChart">
+          <div class="assist-label">Xem biểu đồ và hiểu xu hướng</div>
+          <div class="assist-actions">
+            <button class="assist-btn" id="assistViewChart" type="button">Xem</button>
+            <span class="assist-check">✓</span>
+          </div>
+        </div>
+        <div class="assist-item" data-assist="demoOrder">
+          <div class="assist-label">Đặt lệnh demo với 10% vốn</div>
+          <div class="assist-actions">
+            <button class="assist-btn" id="assistDemoOrder" type="button">Tạo</button>
+            <span class="assist-check">✓</span>
+          </div>
+        </div>
+        <div class="assist-item" data-assist="sampleSLTP">
+          <div class="assist-label">Áp dụng SL/TP mẫu 1%/2%</div>
+          <div class="assist-actions">
+            <button class="assist-btn" id="assistSampleSLTP" type="button">Áp dụng</button>
+            <span class="assist-check">✓</span>
+          </div>
+        </div>
       </div>
       <div class="form-grid">
         <label>Loại lệnh</label>

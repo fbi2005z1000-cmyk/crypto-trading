@@ -2123,6 +2123,7 @@ async function refreshBinancePrices() {
     priceMap[row.symbol] = parseFloat(row.price);
   });
   const now = Date.now();
+  let historyReseeded = false;
   coins.forEach((coin) => {
     if (!coin.binanceSymbol) return;
     const sourceOverride = settings.coinSource?.[coin.symbol];
@@ -2135,6 +2136,10 @@ async function refreshBinancePrices() {
     if (meta.overrideUntil && now < meta.overrideUntil) return;
     const m = market[coin.symbol];
     if (!m) return;
+    if (alignMarketToLive(coin, price, "binance", now)) {
+      historyReseeded = true;
+      return;
+    }
     m.prev = m.price;
     m.price = price;
     m.high = Math.max(m.high, price);
@@ -2152,6 +2157,7 @@ async function refreshBinancePrices() {
     }
     marketMeta[coin.symbol] = { ...meta, lastLive: now, source: "binance" };
   });
+  if (historyReseeded) emitHistorySync();
 }
 
 async function refreshBinanceStats() {
@@ -2196,6 +2202,7 @@ async function refreshCoingeckoMarkets() {
     lookup[coin.symbol] = coin;
   });
   const now = Date.now();
+  let historyReseeded = false;
   coins.forEach((coin) => {
     if (coin.binanceSymbol) return;
     const sourceOverride = settings.coinSource?.[coin.symbol];
@@ -2209,6 +2216,10 @@ async function refreshCoingeckoMarkets() {
     const m = market[coin.symbol];
     if (!m) return;
     if (Number.isFinite(data.base)) {
+      if (alignMarketToLive(coin, data.base, "coingecko", now)) {
+        historyReseeded = true;
+        return;
+      }
       m.prev = m.price;
       m.price = data.base;
     }
@@ -2221,6 +2232,7 @@ async function refreshCoingeckoMarkets() {
     }
     marketMeta[coin.symbol] = { ...meta, lastLive: now, source: "coingecko" };
   });
+  if (historyReseeded) emitHistorySync();
 }
 
 function initMarket() {
@@ -2238,8 +2250,12 @@ function initMarket() {
     marketMeta[coin.symbol] = marketMeta[coin.symbol] || {
       lastLive: 0,
       source: coin.binanceSymbol ? "binance" : coin.cgId ? "coingecko" : "sim",
-      overrideUntil: 0
+      overrideUntil: 0,
+      alignedLive: false
     };
+    if (marketMeta[coin.symbol] && typeof marketMeta[coin.symbol].alignedLive !== "boolean") {
+      marketMeta[coin.symbol].alignedLive = false;
+    }
     candleHistory[coin.symbol] = [];
     let lastClose = seed;
     const now = Math.floor(Date.now() / 1000);
@@ -2261,6 +2277,73 @@ function initMarket() {
       close: lastClose
     };
   });
+}
+
+function reseedCandlesAroundPrice(symbol, price, volHint = 0.003) {
+  const history = [];
+  let lastClose = price;
+  const now = Math.floor(Date.now() / 1000);
+  const vol = Math.max(0.0003, Math.min(0.006, Number(volHint) || 0.003));
+  for (let i = CANDLE_INIT; i > 0; i -= 1) {
+    const time = now - i * CANDLE_INTERVAL_SEC;
+    const open = lastClose;
+    const drift = (Math.random() - 0.5) * vol;
+    const close = Math.max(0.0000001, open * (1 + drift));
+    const wick = Math.max(0.0002, Math.random() * (vol * 0.8));
+    const high = Math.max(open, close) * (1 + wick);
+    const low = Math.max(0.0000001, Math.min(open, close) * (1 - wick));
+    history.push({ time, open, high, low, close });
+    lastClose = close;
+  }
+  candleHistory[symbol] = history;
+  const bucket = now - (now % CANDLE_INTERVAL_SEC);
+  currentCandles[symbol] = {
+    time: bucket,
+    open: lastClose,
+    high: lastClose,
+    low: lastClose,
+    close: lastClose
+  };
+}
+
+function alignMarketToLive(coin, price, source, now) {
+  if (!coin || !Number.isFinite(price) || price <= 0) return false;
+  const symbol = coin.symbol;
+  const meta = marketMeta[symbol] || {};
+  if (meta.alignedLive) return false;
+  if (meta.lastLive && meta.lastLive > 0) {
+    marketMeta[symbol] = { ...meta, alignedLive: true };
+    return false;
+  }
+  const m = market[symbol];
+  if (!m) return false;
+  m.prev = price;
+  m.price = price;
+  m.open = price;
+  m.high = price;
+  m.low = price;
+  marketTrends[symbol] = 0;
+  reseedCandlesAroundPrice(symbol, price, Number.isFinite(coin.vol) ? coin.vol : 0.003);
+  marketMeta[symbol] = {
+    ...meta,
+    lastLive: now,
+    source,
+    alignedLive: true,
+    alignedAt: now
+  };
+  return true;
+}
+
+function emitHistorySync() {
+  try {
+    io.emit("init_history", {
+      history: candleHistory,
+      current: currentCandles,
+      interval: CANDLE_INTERVAL_SEC
+    });
+  } catch {
+    // ignore emit errors
+  }
 }
 
 function addCustomCoin(coin) {
@@ -2360,7 +2443,11 @@ function updateMarketLogic(coin) {
 
   const baseVol = Number.isFinite(coin.vol) ? coin.vol : 0.003;
   const coinScale = Number(settings.coinVolScale?.[coin.symbol]) || 1;
-  const volatility = Math.max(0.0005, Math.min(0.01, baseVol * 1.5)) * godMode.volScale * coinScale;
+  const staleLive = !meta.lastLive || now - meta.lastLive > LIVE_STALE_MS * 10;
+  const cap = staleLive ? 0.004 : 0.01;
+  const floor = staleLive ? 0.0003 : 0.0005;
+  const mult = staleLive ? 0.9 : 1.5;
+  const volatility = Math.max(floor, Math.min(cap, baseVol * mult)) * godMode.volScale * coinScale;
   const change = 1 + (Math.random() * volatility * 2 - volatility);
   const minPrice = 0.0000001;
   const newPrice = Math.max(minPrice, m.price * change);
