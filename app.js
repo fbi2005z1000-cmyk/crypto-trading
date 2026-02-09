@@ -1637,8 +1637,7 @@ function buildAcademySteps() {
     }
   ];
 }
-const academyStepsV2 = buildAcademySteps()
-  .filter((step) => !step || step.target !== "#panelOrderbook");
+const academyStepsV2 = buildAcademySteps();
 academySteps.length = 0;
 academySteps.push(...academyStepsV2);
 
@@ -1838,6 +1837,7 @@ function speakAcademyStep() {
 function initAcademyVisibilityObservers() {
   if (!("IntersectionObserver" in window)) return;
   const items = [
+    { selector: "#panelOrderbook", flag: "open_orderbook" },
     { selector: "#panelOrders", flag: "open_orders_panel" },
     { selector: "#panelWallet", flag: "open_wallet" },
     { selector: "#positionsList", flag: "view_positions" }
@@ -6150,7 +6150,6 @@ function updatePortfolio() {
     })
     .filter(Boolean)
     .sort((a, b) => b.valueUsd - a.valueUsd);
-  updateMiniPortfolio(entries);
 
   if (entries.length === 0) {
     els.portfolioList.innerHTML = `<div class="portfolio-row">Chưa có tài sản</div>`;
@@ -6369,7 +6368,6 @@ function drawDepthToCanvas(canvas, asks, bids, strong = false) {
 }
 
 function drawDepthChart(asks, bids) {
-  if (document.body.classList.contains("no-orderbook")) return;
   if (!els.depthChart) return;
   if (!depthCtx) resizeDepthCanvas();
   drawDepthToCanvas(els.depthChart, asks, bids, false);
@@ -6441,7 +6439,6 @@ function getDepthBook(symbol) {
 }
 
 function buildOrderBook() {
-  if (document.body.classList.contains("no-orderbook")) return;
   if (!els.asks || !els.bids) return;
   const { asks, bids } = getDepthBook(state.selected);
 
@@ -11943,8 +11940,6 @@ function init() {
   if (els.themeToggle) {
     els.themeToggle.textContent = document.body.dataset.theme === "light" ? "Chế độ tối" : "Chế độ sáng";
   }
-  document.body.classList.add("no-orderbook");
-  ensureMiniWallet();
   ensurePrimaryAriaLabels();
   if (!orderNoteDefault && els.orderNote) {
     orderNoteDefault = els.orderNote.textContent || "";
