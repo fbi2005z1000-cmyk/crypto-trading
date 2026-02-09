@@ -11,7 +11,7 @@
   <div class="noise"></div>
   <div class="orb orb-a"></div>
   <div class="orb orb-b"></div>
-  <button id="adminRevealBtn" class="admin-reveal" type="button" aria-label="Mo bang admin">Admin</button>
+  <button id="adminRevealBtn" class="admin-reveal" type="button" aria-label="Mở bảng admin">Admin</button>
   <div class="auth-overlay" id="authOverlay" aria-hidden="false">
     <div class="auth-card">
       <div class="auth-title">Đăng nhập</div>
@@ -31,8 +31,8 @@
         Ghi nhớ đăng nhập
       </label>
       <div class="auth-actions">
-        <button class="auth-btn primary" id="authLoginBtn" type="button" aria-label="Dang nhap">Đăng nhập</button>
-        <button class="auth-btn ghost" id="authRegisterBtn" type="button" aria-label="Dang ky">Đăng ký</button>
+        <button class="auth-btn primary" id="authLoginBtn" type="button" aria-label="Đăng nhập">Đăng nhập</button>
+        <button class="auth-btn ghost" id="authRegisterBtn" type="button" aria-label="Đăng ký">Đăng ký</button>
       </div>
       <div class="auth-error" id="authError"></div>
     </div>
@@ -44,7 +44,7 @@
       <div class="onboarding-text" id="onboardingText">Nhập tài khoản của bạn để vào game.</div>
       <div class="onboarding-actions">
         <button id="onboardingSkip" type="button">Bỏ qua</button>
-        <button id="onboardingSkipForever" type="button">Khong hien lai</button>
+        <button id="onboardingSkipForever" type="button">Không hiện lại</button>
         <button id="onboardingNext" type="button">Tiếp tục</button>
       </div>
     </div>
@@ -80,8 +80,8 @@
       </div>
     </div>
     <div class="status">
-      <div class="pill net-badge offline" id="netBadge">Mat ket noi</div>
-      <div class="pill pending-badge hidden" id="pendingBadge">Dang xu ly: 0</div>
+      <div class="pill net-badge offline" id="netBadge">Mất kết nối</div>
+      <div class="pill pending-badge hidden" id="pendingBadge">Đang xử lý: 0</div>
       <div class="pill live">MÔ PHỎNG LIVE</div>
       <div class="pill">Tỷ giá 1 USD ≈ <span id="fxRate"></span> VND</div>
       <div class="pill">Phí: <span id="feeRate">0.10%</span></div>
@@ -92,7 +92,7 @@
       <button class="pill toggle mail-btn" id="mailBtn" type="button" aria-label="Mo hop thu">
         Hộp thư <span id="mailCount" class="mail-badge hidden">0</span>
       </button>
-      <button class="pill toggle" id="logoutBtn" type="button" aria-label="Dang xuat">Đăng xuất</button>
+      <button class="pill toggle" id="logoutBtn" type="button" aria-label="Đăng xuất">Đăng xuất</button>
     </div>
   </header>
 
@@ -194,8 +194,8 @@
         <button class="tip-chip" data-tip="risk">Quản lý rủi ro</button>
       </div>
       <div class="practice-controls">
-        <button id="practiceBtn" class="mini" type="button">Thuc hanh 3 phut</button>
-        <button id="focusToggle" class="mini" type="button">Focus 1 coin</button>
+        <button id="practiceBtn" class="mini" type="button">Thực hành 3 phút</button>
+        <button id="focusToggle" class="mini" type="button">Tập trung 1 coin</button>
       </div>
       <div class="chart-wrap" id="chartArea">
           <div class="chart-grid layout-1" id="chartGrid">
@@ -233,16 +233,16 @@
           <div class="practice-card">
             <div class="practice-head">
               <div>
-                <div class="practice-title">Luyen tap 3 phut</div>
-                <div class="practice-sub">Hoan thanh SL/TP + dat lenh</div>
+                <div class="practice-title">Luyện tập 3 phút</div>
+                <div class="practice-sub">Hoàn thành SL/TP + đặt lệnh</div>
               </div>
-              <button id="practiceClose" type="button">Thoat</button>
+              <button id="practiceClose" type="button">Thoát</button>
             </div>
             <div class="practice-timer" id="practiceTimer">03:00</div>
             <div class="practice-check">
-              <label><input type="checkbox" id="practiceSL" /> Dat SL</label>
-              <label><input type="checkbox" id="practiceTP" /> Dat TP</label>
-              <label><input type="checkbox" id="practiceOrder" /> Dat lenh</label>
+              <label><input type="checkbox" id="practiceSL" /> Đặt SL</label>
+              <label><input type="checkbox" id="practiceTP" /> Đặt TP</label>
+              <label><input type="checkbox" id="practiceOrder" /> Đặt lệnh</label>
             </div>
           </div>
         </div>
@@ -326,7 +326,7 @@
       <div class="order-templates" id="orderTemplates">
         <div class="order-templates-title">Mau lenh 1-click</div>
         <div class="order-templates-row">
-          <button type="button" data-template="safe">An toan</button>
+          <button type="button" data-template="safe">An toàn</button>
           <button type="button" data-template="mid">Trung binh</button>
           <button type="button" data-template="risk">Mao hiem</button>
         </div>
@@ -339,7 +339,7 @@
         </select>
 
           <label>Đòn bẩy</label>
-          <select id="leverageSlider" aria-label="Don bay">
+          <select id="leverageSlider" aria-label="Đòn bẩy">
           <option value="1">x1 (Spot)</option>
           <option value="5">x5</option>
           <option value="10">x10</option>
@@ -355,9 +355,9 @@
 
         <label>Số lượng</label>
         <div class="qty-stepper">
-          <button id="orderQtyDown" type="button" aria-label="Giam so luong">-</button>
+          <button id="orderQtyDown" type="button" aria-label="Giảm số lượng">-</button>
           <input id="orderQty" type="number" min="0" step="0.0001" placeholder="0" aria-label="So luong lenh" />
-          <button id="orderQtyUp" type="button" aria-label="Tang so luong">+</button>
+          <button id="orderQtyUp" type="button" aria-label="Tăng số lượng">+</button>
         </div>
 
         <label>% vốn</label>
@@ -385,13 +385,15 @@
         <div class="order-preview-title">Xem truoc lenh</div>
         <div class="order-preview-grid">
           <div>Gia</div><div id="previewPrice">-</div>
-          <div>Don bay</div><div id="previewLeverage">-</div>
+          <div>Đòn bẩy</div><div id="previewLeverage">-</div>
           <div>Notional</div><div id="previewNotional">-</div>
           <div>Truot gia</div><div id="previewSlippage">-</div>
           <div>Phi</div><div id="previewFee">-</div>
+          <div>Margin</div><div id="previewMargin">-</div>
+          <div>Liquidation</div><div id="previewLiquidation">-</div>
         </div>
       </div>
-      <button class="cta" id="submitOrder" aria-label="Dat lenh">Đặt lệnh</button>
+      <button class="cta" id="submitOrder" aria-label="Đặt lệnh">Đặt lệnh</button>
       <div class="notice" id="orderNote">Số dư khả dụng sẽ bị trừ ngay khi khớp lệnh.</div>
     </section>
 
@@ -503,7 +505,7 @@
       <div class="leaderboard" id="leaderboard"></div>
       <div class="leaderboard" id="weeklyLeaderboard"></div>
       <div class="lesson-history" id="lessonHistory">
-        <div class="lesson-history-title">Lich su hoc tap</div>
+        <div class="lesson-history-title">Lịch sử học tập</div>
         <div class="lesson-history-list" id="lessonHistoryList"></div>
       </div>
       <div class="poll-card" id="bullBearPoll">
@@ -588,7 +590,7 @@
   <div class="quick-actions" id="quickActions">
     <button id="quickBuyBtn" type="button" aria-label="Mua nhanh">Mua nhanh</button>
     <button id="quickSellBtn" type="button" aria-label="Ban nhanh">Bán nhanh</button>
-    <button id="quickCancelBtn" type="button" aria-label="Huy lenh gan nhat">Hủy lệnh gần nhất</button>
+    <button id="quickCancelBtn" type="button" aria-label="Hủy lệnh gần nhất">Hủy lệnh gần nhất</button>
   </div>
   <div class="tip-overlay hidden" id="tipOverlay">
     <div class="tip-card">
@@ -617,18 +619,18 @@
       <div class="quiz-question" id="quizQuestion"></div>
       <div class="quiz-options" id="quizOptions"></div>
       <div class="quiz-actions">
-        <button id="quizSkip" type="button">Bo qua</button>
-        <button id="quizNext" type="button">Tiep tuc</button>
+        <button id="quizSkip" type="button">Bỏ qua</button>
+        <button id="quizNext" type="button">Tiếp tục</button>
       </div>
     </div>
   </div>
   <div class="order-warn-overlay hidden" id="orderWarnOverlay">
     <div class="order-warn-card">
-      <div class="order-warn-title" id="orderWarnTitle">Canh bao</div>
+      <div class="order-warn-title" id="orderWarnTitle">Cảnh báo</div>
       <div class="order-warn-text" id="orderWarnText"></div>
       <div class="order-warn-actions">
-        <button id="orderWarnSecondary" type="button">Huy</button>
-        <button id="orderWarnPrimary" type="button">Tiep tuc</button>
+        <button id="orderWarnSecondary" type="button">Hủy</button>
+        <button id="orderWarnPrimary" type="button">Tiếp tục</button>
       </div>
     </div>
   </div>
@@ -644,12 +646,12 @@
   </div>
   <div class="admin-modal hidden" id="adminModal">
     <div class="admin-modal-card">
-      <div class="admin-modal-title" id="adminModalTitle">Xac nhan</div>
+      <div class="admin-modal-title" id="adminModalTitle">Xác nhận</div>
       <div class="admin-modal-text" id="adminModalText"></div>
       <input id="adminModalInput" class="admin-modal-input" type="text" />
       <div class="admin-modal-actions">
-        <button id="adminModalCancel" type="button">Huy</button>
-        <button id="adminModalOk" type="button">Xac nhan</button>
+        <button id="adminModalCancel" type="button">Hủy</button>
+        <button id="adminModalOk" type="button">Xác nhận</button>
       </div>
     </div>
   </div>
@@ -936,7 +938,7 @@
   <div class="mobile-bar" id="mobileBar">
     <button type="button" data-target="#panelMarket">Thi truong</button>
     <button type="button" data-target="#panelChart">Bieu do</button>
-    <button type="button" data-target="#panelOrder">Dat lenh</button>
+    <button type="button" data-target="#panelOrder">Đặt lệnh</button>
     <button type="button" data-target="#panelWallet">Vi</button>
     <button type="button" data-target="#panelOrders">Lenh cho</button>
   </div>

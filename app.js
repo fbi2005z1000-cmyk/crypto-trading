@@ -264,6 +264,7 @@ const state = {
   marketRegime: { mode: "sideway", until: 0 },
   depthBooks: {},
   chartPoints: 120,
+  chartPointsDesired: 120,
   equityHistory: [],
   leaderboard: [],
   weeklyLeaderboard: [],
@@ -273,6 +274,7 @@ const state = {
   mailFilter: "all",
   muteUntil: 0,
   perfMode: false,
+  perfAuto: false,
   compactMode: false,
   focusMode: false,
   tipAudioEnabled: true,
@@ -309,6 +311,10 @@ const CHART_MIN_VISIBLE = 20;
 const CHART_MAX_VISIBLE = 600;
 const CHART_ZOOM_MIN = 0.35;
 const CHART_ZOOM_MAX = 4;
+const PERF_CHART_POINTS = 80;
+const PERF_FRAME_LIMIT_MS = 24;
+const PERF_FRAME_RECOVER_MS = 16;
+const PERF_FRAME_SAMPLE = 10;
 const TV_BAR_SPACING_MIN = 2;
 const TV_BAR_SPACING_MAX = 28;
 const CHART_PAN_THRESHOLD = 8;
@@ -1281,7 +1287,7 @@ function renderAdminLogList(list = []) {
     return [role, action, actor, detail].some((v) => v.includes(term));
   });
   if (!filtered.length) {
-    els.adminStatsOutput.innerHTML = "<div class=\"admin-log-empty\">Khong co log.</div>";
+    els.adminStatsOutput.innerHTML = "<div class=\"admin-log-empty\">Không có log.</div>";
     els.adminStatsOutput.classList.add("admin-log-view");
     return;
   }
@@ -1339,13 +1345,13 @@ function openAdminModal(opts = {}) {
     return Promise.resolve({ ok: false, value: "" });
   }
   const {
-    title = "Xac nhan",
+    title = "Xác nhận",
     text = "",
     placeholder = "",
     value = "",
     type = "text",
-    okText = "Xac nhan",
-    cancelText = "Huy",
+    okText = "Xác nhận",
+    cancelText = "Hủy",
     hideInput = false
   } = opts;
   return new Promise((resolve) => {
@@ -1396,7 +1402,7 @@ async function adminConfirm(opts = {}) {
 
 async function promptNumber(label, fallback) {
   const raw = await adminPrompt({
-    title: "Nhap so",
+    title: "Nhập số",
     text: label,
     value: fallback != null ? String(fallback) : "",
     placeholder: fallback != null ? String(fallback) : ""
@@ -1719,6 +1725,8 @@ const els = {
   previewNotional: document.getElementById("previewNotional"),
   previewSlippage: document.getElementById("previewSlippage"),
   previewFee: document.getElementById("previewFee"),
+  previewMargin: document.getElementById("previewMargin"),
+  previewLiquidation: document.getElementById("previewLiquidation"),
   submitOrder: document.getElementById("submitOrder"),
   orderPanel: document.querySelector(".panel.orderform"),
   authOverlay: document.getElementById("authOverlay"),
@@ -2097,7 +2105,13 @@ let tvEnabled = false;
 const tvCharts = [];
 const tvSeries = [];
 const chartFrames = [null, null, null, null];
-const chartViewports = Array.from({ length: 4 }, () => ({ zoom: 1, offset: 0 }));
+  const chartViewports = Array.from({ length: 4 }, () => ({
+    zoom: 1,
+    offset: 0,
+    locked: false,
+    lastTotal: 0
+  }));
+  const tvViewportLocks = Array.from({ length: 4 }, () => false);
 const chartPanState = {
   active: false,
   pending: false,
@@ -2587,7 +2601,8 @@ function initSocket() {
       if (handleInitHistory(payload)) return;
     }
     if (Number.isFinite(payload.chartPoints) && payload.chartPoints > 10) {
-      state.chartPoints = payload.chartPoints;
+      state.chartPointsDesired = payload.chartPoints;
+      applyPerfChartPoints();
     }
     if (payload.history && typeof payload.history === "object") {
       Object.entries(payload.history).forEach(([symbol, series]) => {
@@ -2878,7 +2893,7 @@ function initSocket() {
     if (payload?.candleBias) {
       const symbol = payload?.all ? "tat ca coin" : (payload?.symbol || "coin");
       const dir = payload?.direction || "";
-      showToast(`Da ap dung nen ${dir} cho ${symbol}.`);
+      showToast(`Đã áp dụng nến ${dir} cho ${symbol}.`);
     }
     if (adminState.authed) {
       socket.emit("admin_action", { action: "CHECK_USERS" });
@@ -2895,7 +2910,7 @@ function initSocket() {
     if (payload?.requireOwnerCode && action !== "RESET_PASSWORD") {
       const confirmCode = await adminPrompt({
         title: "Ma xac nhan",
-        text: "Nhap ma xac nhan (ma sep):",
+        text: "Nhập mã xác nhận (mã sếp):",
         type: "password"
       });
       if (!confirmCode) return;
@@ -3041,7 +3056,7 @@ function saveLocalLegacy() {
     tradeVolumeUsd: state.tradeVolumeUsd,
     risk: state.risk,
     marketRegime: state.marketRegime,
-    chartPoints: state.chartPoints
+    chartPoints: state.chartPointsDesired || state.chartPoints
   };
 
   localStorage.setItem("cryptoGameSave_Full_v1", JSON.stringify(saveData));
@@ -3073,7 +3088,10 @@ function loadLocalLegacy() {
     state.tradeVolumeUsd = data.tradeVolumeUsd || 0;
     state.risk = data.risk || state.risk;
     state.marketRegime = data.marketRegime || state.marketRegime;
-    if (data.chartPoints) state.chartPoints = data.chartPoints;
+    if (data.chartPoints) {
+      state.chartPointsDesired = data.chartPoints;
+      state.chartPoints = data.chartPoints;
+    }
 
     if (data.achievements) state.achievements = new Set(data.achievements);
     if (data.favorites) state.favorites = new Set(data.favorites);
@@ -3205,7 +3223,7 @@ function saveLocal() {
     tradeVolumeUsd: state.tradeVolumeUsd,
     risk: state.risk,
     marketRegime: state.marketRegime,
-    chartPoints: state.chartPoints,
+    chartPoints: state.chartPointsDesired || state.chartPoints,
     compactMode: !!state.compactMode,
     focusMode: !!state.focusMode,
     tipAudioEnabled: !!state.tipAudioEnabled
@@ -3225,7 +3243,10 @@ function loadLocal() {
     state.tradeVolumeUsd = data.tradeVolumeUsd || 0;
     state.risk = data.risk || state.risk;
     state.marketRegime = data.marketRegime || state.marketRegime;
-    if (data.chartPoints) state.chartPoints = data.chartPoints;
+    if (data.chartPoints) {
+      state.chartPointsDesired = data.chartPoints;
+      state.chartPoints = data.chartPoints;
+    }
 
     if (data.achievements) state.achievements = new Set(data.achievements);
     if (Array.isArray(data.lessonHistory)) state.lessonHistory = data.lessonHistory;
@@ -3579,23 +3600,23 @@ const tipPool = [
 
 const TIP_CHIPS = {
   candle: {
-    title: "Nen la gi?",
-    text: "Doc than nen, rau nen va y nghia cua moi phan.",
+    title: "Nến là gì?",
+    text: "Đọc thân nến, râu nến và ý nghĩa của mỗi phần.",
     duration: 12
   },
   trend: {
-    title: "Xac dinh xu huong",
-    text: "Dinh sau cao hon dinh truoc thi xu huong tang.",
+    title: "Xác định xu hướng",
+    text: "Đỉnh sau cao hơn đỉnh trước thì xu hướng tăng.",
     duration: 14
   },
   "sl-tp": {
-    title: "SL/TP co ban",
-    text: "Dat SL 1-2%, TP 2-3% de bao ve tai khoan.",
+    title: "SL/TP cơ bản",
+    text: "Đặt SL 1-2%, TP 2-3% để bảo vệ tài khoản.",
     duration: 10
   },
   risk: {
-    title: "Quan ly rui ro",
-    text: "Khong all-in, vao 10-20% von moi lenh.",
+    title: "Quản lý rủi ro",
+    text: "Không all-in, vào 10-20% vốn mỗi lệnh.",
     duration: 15
   }
 };
@@ -3611,49 +3632,49 @@ const TIP_QUIZ_XP = 20;
 const TIP_QUIZ = {
   candle: [
     {
-      q: "Than nen the hien dieu gi?",
-      options: ["Gia mo dong cua", "Do bien dong gia", "Khoi luong", "Thong tin SL"],
+      q: "Thân nến thể hiện điều gì?",
+      options: ["Giá mở đóng cửa", "Độ biến động giá", "Khối lượng", "Thông tin SL"],
       correct: 1
     },
     {
-      q: "Rau nen dung de nhan biet?",
-      options: ["Do rung", "Diem cao/thap trong ky", "Phi giao dich", "Lenh cho"],
+      q: "Râu nến dùng để nhận biết?",
+      options: ["Độ rung", "Điểm cao/thấp trong kỳ", "Phí giao dịch", "Lệnh chờ"],
       correct: 1
     }
   ],
   trend: [
     {
-      q: "Dinh sau cao hon dinh truoc la xu huong?",
-      options: ["Giam", "Tang", "Sideway", "Khong ro"],
+      q: "Đỉnh sau cao hơn đỉnh trước là xu hướng?",
+      options: ["Giảm", "Tăng", "Sideway", "Không rõ"],
       correct: 1
     },
     {
-      q: "Trong xu huong tang, uu tien?",
-      options: ["Ban", "Mua", "All-in", "Bo qua SL"],
+      q: "Trong xu hướng tăng, ưu tiên?",
+      options: ["Bán", "Mua", "All-in", "Bỏ qua SL"],
       correct: 1
     }
   ],
   "sl-tp": [
     {
-      q: "SL dung de?",
-      options: ["Nham loi", "Cat lo", "Tang don bay", "Giam phi"],
+      q: "SL dùng để?",
+      options: ["Nhầm lệnh", "Cắt lỗ", "Tăng đòn bẩy", "Giảm phí"],
       correct: 1
     },
     {
-      q: "TP dung de?",
-      options: ["Cat lo", "Chot loi", "Giam rui ro", "An toan hon"],
+      q: "TP dùng để?",
+      options: ["Cắt lỗ", "Chốt lời", "Giảm rủi ro", "An toàn hơn"],
       correct: 1
     }
   ],
   risk: [
     {
-      q: "Quan ly rui ro dung la?",
-      options: ["All-in", "Vao 10-20% von", "Khong can SL", "Tang don bay max"],
+      q: "Quản lý rủi ro đúng là?",
+      options: ["All-in", "Vào 10-20% vốn", "Không cần SL", "Tăng đòn bẩy max"],
       correct: 1
     },
     {
-      q: "Neu thua lien tuc nen?",
-      options: ["Giao dich tiep", "Nghi va xem lai", "Tang von", "Bo SL"],
+      q: "Nếu thua liên tục nên?",
+      options: ["Giao dịch tiếp", "Nghỉ và xem lại", "Tăng vốn", "Bỏ SL"],
       correct: 1
     }
   ]
@@ -3896,7 +3917,7 @@ function openPractice() {
       state.practice.remaining = 0;
       updatePracticeUI();
       closePractice();
-      showToast("Hoan thanh luyen tap 3 phut.");
+      showToast("Hoàn thành luyện tập 3 phút.");
       return;
     }
     updatePracticeUI();
@@ -3947,10 +3968,10 @@ function showOrderWarn({ title, text, primary, secondary } = {}) {
       // ignore
     }
   }
-  if (els.orderWarnTitle) els.orderWarnTitle.textContent = title || "Canh bao";
+  if (els.orderWarnTitle) els.orderWarnTitle.textContent = title || "Cảnh báo";
   if (els.orderWarnText) els.orderWarnText.textContent = text || "";
-  if (els.orderWarnPrimary) els.orderWarnPrimary.textContent = primary || "Tiep tuc";
-  if (els.orderWarnSecondary) els.orderWarnSecondary.textContent = secondary || "Huy";
+  if (els.orderWarnPrimary) els.orderWarnPrimary.textContent = primary || "Tiếp tục";
+  if (els.orderWarnSecondary) els.orderWarnSecondary.textContent = secondary || "Hủy";
   els.orderWarnOverlay.classList.remove("hidden");
   requestAnimationFrame(() => els.orderWarnOverlay.classList.add("show"));
   return new Promise((resolve) => {
@@ -4774,7 +4795,7 @@ function startOfflineMode() {
 function updateConnectionBadge() {
   if (!els.netBadge) return;
   const online = socketState.connected && !socketState.offline;
-  els.netBadge.textContent = online ? "Dang ket noi" : "Mat ket noi";
+  els.netBadge.textContent = online ? "Đang kết nối" : "Mất kết nối";
   els.netBadge.classList.toggle("online", online);
   els.netBadge.classList.toggle("offline", !online);
 }
@@ -4783,7 +4804,7 @@ function updatePendingBadge() {
   if (!els.pendingBadge) return;
   const count = pendingOrders.size;
   if (count > 0) {
-    els.pendingBadge.textContent = `Dang xu ly: ${count}`;
+    els.pendingBadge.textContent = `Đang xử lý: ${count}`;
     els.pendingBadge.classList.remove("hidden");
   } else {
     els.pendingBadge.classList.add("hidden");
@@ -5388,6 +5409,20 @@ function updateOrderCalc() {
   const notionalQuote = toQuote(execPriceUsd) * qty;
   const totalQuote = leverage === 1 ? notionalQuote : notionalQuote / leverage;
   const feeQuote = totalQuote * getFeeRate();
+  const marginQuote = totalQuote;
+  const marginUsd = leverage > 0 ? notionalUsd / leverage : 0;
+  let liquidationUsd = null;
+  if (leverage > 1 && qty > 0 && Number.isFinite(marginUsd)) {
+    const maintenance = marginUsd * MAINTENANCE_RATE;
+    const denom = qty * leverage;
+    if (denom > 0) {
+      const delta = (maintenance - marginUsd) / denom;
+      liquidationUsd = state.side === "buy"
+        ? execPriceUsd + delta
+        : execPriceUsd - delta;
+      if (!Number.isFinite(liquidationUsd) || liquidationUsd <= 0) liquidationUsd = null;
+    }
+  }
   const fmt = (value) => (state.quote === "USD" ? formatUSD(value) : formatVND(value));
 
   if (!qty || qty <= 0) {
@@ -5398,6 +5433,8 @@ function updateOrderCalc() {
     if (els.previewNotional) els.previewNotional.textContent = "-";
     if (els.previewSlippage) els.previewSlippage.textContent = "-";
     if (els.previewFee) els.previewFee.textContent = "-";
+    if (els.previewMargin) els.previewMargin.textContent = "-";
+    if (els.previewLiquidation) els.previewLiquidation.textContent = "-";
     if (els.orderPreview) els.orderPreview.classList.remove("warn");
     if (els.orderNote) {
       els.orderNote.textContent = orderNoteDefault || els.orderNote.textContent;
@@ -5414,10 +5451,18 @@ function updateOrderCalc() {
   if (els.previewNotional) els.previewNotional.textContent = fmt(notionalQuote);
   if (els.previewSlippage) els.previewSlippage.textContent = `${slippagePct.toFixed(2)}%`;
   if (els.previewFee) els.previewFee.textContent = fmt(feeQuote);
+  if (els.previewMargin) els.previewMargin.textContent = fmt(marginQuote);
+  if (els.previewLiquidation) {
+    els.previewLiquidation.textContent = liquidationUsd
+      ? (state.quote === "USD" ? formatUSD(liquidationUsd) : formatVND(toQuote(liquidationUsd)))
+      : "-";
+  }
 
   const warnMessages = [];
   const overQty = qty > MAX_ORDER_QTY;
   const overNotional = notionalUsd > MAX_NOTIONAL_USD;
+  const equity = totalEquityUSD();
+  const sizePct = equity > 0 ? (notionalUsd / equity) : 0;
   const balanceQuote = state.quote === "USD" ? state.usd : state.vnd;
   const requiredQuote = totalQuote + feeQuote;
   const insufficientBalance = requiredQuote > balanceQuote;
@@ -5426,11 +5471,14 @@ function updateOrderCalc() {
     && qty > (state.holdings[state.selected] || 0);
   if (overQty) warnMessages.push("So luong vuot gioi han.");
   if (overNotional) warnMessages.push("Notional vuot gioi han.");
+  if (sizePct >= 0.3) {
+    warnMessages.push(`Lenh chiem ~${Math.round(sizePct * 100)}% von. Goi y giam xuong 10-20%.`);
+  }
   if (insufficientBalance && !(state.side === "sell" && leverage === 1)) {
-    warnMessages.push("So du khong du de dat lenh.");
+    warnMessages.push("Số dư không đủ để đặt lệnh.");
   }
   if (insufficientSpot) {
-    warnMessages.push("Khong du coin de ban spot.");
+    warnMessages.push("Không đủ coin để bán spot.");
   }
   const showWarn = warnMessages.length > 0;
   if (els.orderPreview) els.orderPreview.classList.toggle("warn", showWarn);
@@ -5447,8 +5495,8 @@ function ensurePrimaryAriaLabels() {
     watchAll: "Hien thi tat ca coin",
     watchFav: "Hien thi coin theo doi",
     submitOrder: "Gui lenh giao dich",
-    orderQtyDown: "Giam so luong dat lenh",
-    orderQtyUp: "Tang so luong dat lenh",
+    orderQtyDown: "Giảm số lượng đặt lệnh",
+    orderQtyUp: "Tăng số lượng đặt lệnh",
     dailyCheckinBtn: "Nhan thuong diem danh",
     predictUpBtn: "Du doan nen xanh",
     predictDownBtn: "Du doan nen do",
@@ -5456,7 +5504,7 @@ function ensurePrimaryAriaLabels() {
     adminBroadcastBtn: "Phat thong bao toan he thong",
     adminMailSendBtn: "Gui thu admin den nguoi choi",
     academyPrev: "Quay lai buoc huong dan truoc",
-    academyNext: "Di den buoc huong dan tiep theo",
+    academyNext: "Đi đến bước hướng dẫn tiếp theo",
     academyRestart: "Bat dau lai hoc vien",
     academyClose: "Thoat hoc vien"
   };
@@ -5532,7 +5580,7 @@ function applyOrderTemplate(kind) {
   if (!tpl) return;
   const priceUsd = state.market[state.selected]?.price;
   if (!Number.isFinite(priceUsd) || priceUsd <= 0) {
-    showToast("Gia chua san sang.");
+    showToast("Giá chưa sẵn sàng.");
     return;
   }
   const maxLev = getMaxLeverage();
@@ -5556,7 +5604,7 @@ function applyOrderTemplate(kind) {
   applyOrderPercent(tpl.pct);
   updateOrderCalc();
   markPracticeFromInputs();
-  showToast("Da ap dung mau lenh.");
+  showToast("Đã áp dụng mẫu lệnh.");
 }
 
 async function preOrderGuard() {
@@ -5580,14 +5628,14 @@ async function preOrderGuard() {
 
   const warns = [];
   if (!hasSLTP) warns.push("Ban chua dat SL/TP cho lenh nay.");
-  if (sizePct >= 0.3) warns.push(`Kich thuoc lenh ~${Math.round(sizePct * 100)}% von. Hay can nhac giam.`);
+  if (sizePct >= 0.3) warns.push(`Kich thuoc lenh ~${Math.round(sizePct * 100)}% von. Goi y giam xuong 10-20%.`);
 
   if (warns.length === 0) return true;
   const ok = await showOrderWarn({
-    title: "Canh bao rui ro",
+    title: "Cảnh báo rủi ro",
     text: warns.join(" "),
-    primary: "Tiep tuc",
-    secondary: "Huy"
+    primary: "Tiếp tục",
+    secondary: "Hủy"
   });
   return ok;
 }
@@ -5827,46 +5875,46 @@ function evaluateTradeQuality(pnlUsd) {
   const reasons = [];
   if (meta.hasSLTP) {
     score += 20;
-    reasons.push("Co SL/TP");
+    reasons.push("Có SL/TP");
   } else {
     score -= 10;
-    reasons.push("Thieu SL/TP");
+    reasons.push("Thiếu SL/TP");
   }
   if (meta.leverage <= 10) {
     score += 15;
-    reasons.push("Don bay vua");
+    reasons.push("Đòn bẩy vừa");
   } else if (meta.leverage <= 20) {
     score += 5;
-    reasons.push("Don bay cao");
+    reasons.push("Đòn bẩy cao");
   } else {
     score -= 10;
-    reasons.push("Don bay rat cao");
+    reasons.push("Đòn bẩy rất cao");
   }
   if (ratio <= 0.1) {
     score += 15;
-    reasons.push("Von nho");
+    reasons.push("Vốn nhỏ");
   } else if (ratio <= 0.25) {
     score += 8;
-    reasons.push("Von vua");
+    reasons.push("Vốn vừa");
   } else if (ratio <= 0.5) {
     score -= 5;
-    reasons.push("Von lon");
+    reasons.push("Vốn lớn");
   } else {
     score -= 15;
-    reasons.push("Von qua lon");
+    reasons.push("Vốn quá lớn");
   }
   if (pnlUsd > 0) {
     score += 10;
-    reasons.push("Chot loi");
+    reasons.push("Chốt lời");
   } else if (pnlUsd < 0) {
     score -= 5;
-    reasons.push("Lo");
+    reasons.push("Lỗ");
   }
   score = clamp(Math.round(score), 0, 100);
   let grade = "On";
   if (score >= 75) grade = "Tot";
   else if (score < 45) grade = "Can cai thien";
-  showToast(`Danh gia lenh: ${grade} (${score}/100). ${reasons.join(", ")}.`);
+  showToast(`Đánh giá lệnh: ${grade} (${score}/100). ${reasons.join(", ")}.`);
 }
 
 function calcPositionPnl(pos, price) {
@@ -6642,6 +6690,8 @@ function ensureChartBackground(canvas, lowerEnabled) {
 
 let chartDirty = true;
 let chartRAF = 0;
+let perfSamples = [];
+let perfLastToggle = 0;
 function scheduleChartDraw() {
   if (tvEnabled) {
     renderAllTvSlots();
@@ -6655,6 +6705,36 @@ function scheduleChartDraw() {
     drawCharts();
     chartDirty = false;
   });
+}
+
+function applyPerfChartPoints() {
+  const desired = Number(state.chartPointsDesired || state.chartPoints || 120);
+  const effective = state.perfMode ? Math.min(desired, PERF_CHART_POINTS) : desired;
+  if (effective === state.chartPoints) return;
+  state.chartPoints = effective;
+  normalizeChartDataLength();
+  drawChart();
+}
+
+function updatePerfAuto(frameMs) {
+  if (!Number.isFinite(frameMs)) return;
+  perfSamples.push(frameMs);
+  if (perfSamples.length > PERF_FRAME_SAMPLE) perfSamples.shift();
+  if (perfSamples.length < PERF_FRAME_SAMPLE) return;
+  const avg = perfSamples.reduce((sum, v) => sum + v, 0) / perfSamples.length;
+  const now = Date.now();
+  if (!state.perfAuto && avg > PERF_FRAME_LIMIT_MS && now - perfLastToggle > 3000) {
+    state.perfAuto = true;
+    perfLastToggle = now;
+    updatePerfMode();
+    applyPerfChartPoints();
+  }
+  if (state.perfAuto && avg < PERF_FRAME_RECOVER_MS && now - perfLastToggle > 6000) {
+    state.perfAuto = false;
+    perfLastToggle = now;
+    updatePerfMode();
+    applyPerfChartPoints();
+  }
 }
 
 function calcMA(series, period) {
@@ -6917,9 +6997,9 @@ function getVisibleCount(total, zoom) {
   return Math.max(CHART_MIN_VISIBLE, Math.min(maxVisible, raw));
 }
 
-function sliceCandlesForViewport(allCandles, slotIndex) {
-  const total = allCandles.length;
-  if (total <= CHART_MIN_VISIBLE) {
+  function sliceCandlesForViewport(allCandles, slotIndex) {
+    const total = allCandles.length;
+    if (total <= CHART_MIN_VISIBLE) {
     return {
       candles: allCandles.slice(),
       total,
@@ -6927,14 +7007,19 @@ function sliceCandlesForViewport(allCandles, slotIndex) {
       leftIndex: 0
     };
   }
-  const viewport = getChartViewport(slotIndex);
-  viewport.zoom = clamp(Number(viewport.zoom) || 1, CHART_ZOOM_MIN, CHART_ZOOM_MAX);
-  const visible = getVisibleCount(total, viewport.zoom);
-  const maxOffset = Math.max(0, total - visible);
-  viewport.offset = clamp(Math.round(Number(viewport.offset) || 0), 0, maxOffset);
-  const leftIndex = total - visible - viewport.offset;
-  return {
-    candles: allCandles.slice(leftIndex, leftIndex + visible),
+    const viewport = getChartViewport(slotIndex);
+    viewport.zoom = clamp(Number(viewport.zoom) || 1, CHART_ZOOM_MIN, CHART_ZOOM_MAX);
+    const visible = getVisibleCount(total, viewport.zoom);
+    const maxOffset = Math.max(0, total - visible);
+    const prevTotal = Number(viewport.lastTotal) || total;
+    viewport.offset = clamp(Math.round(Number(viewport.offset) || 0), 0, maxOffset);
+    if (viewport.locked && total > prevTotal) {
+      viewport.offset = clamp(viewport.offset + (total - prevTotal), 0, maxOffset);
+    }
+    const leftIndex = total - visible - viewport.offset;
+    viewport.lastTotal = total;
+    return {
+      candles: allCandles.slice(leftIndex, leftIndex + visible),
     total,
     visible,
     leftIndex
@@ -7341,7 +7426,7 @@ function renderTvSlot(idx) {
   }
   try {
     series.setData(data);
-    if (chart && chart.timeScale) chart.timeScale().fitContent();
+    if (chart && chart.timeScale && !tvViewportLocks[idx]) chart.timeScale().fitContent();
   } catch (err) {
     console.warn("Lỗi vẽ nến:", err);
   }
@@ -7398,18 +7483,21 @@ function markChartInteraction(duration = 220) {
   }, ms + 24);
 }
 
-function resetChartViewport(slotIndex, keepZoom = false) {
-  const viewport = getChartViewport(slotIndex);
-  viewport.offset = 0;
-  if (!keepZoom) viewport.zoom = 1;
-  if (chartFrames[slotIndex]) chartFrames[slotIndex] = null;
-}
+  function resetChartViewport(slotIndex, keepZoom = false) {
+    const viewport = getChartViewport(slotIndex);
+    viewport.offset = 0;
+    if (!keepZoom) viewport.zoom = 1;
+    viewport.locked = false;
+    viewport.lastTotal = 0;
+    if (tvViewportLocks[slotIndex] != null) tvViewportLocks[slotIndex] = false;
+    if (chartFrames[slotIndex]) chartFrames[slotIndex] = null;
+  }
 
-function zoomChartAt(slotIndex, clientX, deltaY) {
-  const symbol = state.chartSlots[slotIndex];
-  if (!symbol) return;
-  const allCandles = getCandlesForSymbol(symbol);
-  if (!allCandles || allCandles.length < 3) return;
+  function zoomChartAt(slotIndex, clientX, deltaY) {
+    const symbol = state.chartSlots[slotIndex];
+    if (!symbol) return;
+    const allCandles = getCandlesForSymbol(symbol);
+    if (!allCandles || allCandles.length < 3) return;
   const wheelDelta = clamp(Number(deltaY) || 0, -720, 720);
   if (Math.abs(wheelDelta) < 0.01) return;
 
@@ -7422,22 +7510,33 @@ function zoomChartAt(slotIndex, clientX, deltaY) {
   const total = allCandles.length;
   const visibleBefore = getVisibleCount(total, oldZoom);
   const visibleAfter = getVisibleCount(total, nextZoom);
-  const tile = els.chartGrid?.querySelector(`.chart-tile[data-slot="${slotIndex}"]`);
-  const rect = tile ? tile.getBoundingClientRect() : null;
-  const ratio = rect
-    ? clamp((clientX - rect.left) / Math.max(1, rect.width), 0, 1)
-    : 0.5;
+    const baseCanvas = els.chartCanvases[slotIndex] || els.chartFxCanvases[slotIndex];
+    const rect = baseCanvas ? baseCanvas.getBoundingClientRect() : null;
+    const oldOffset = clamp(Number(viewport.offset) || 0, 0, Math.max(0, total - visibleBefore));
+    const leftBefore = total - visibleBefore - oldOffset;
+    let anchorIndex = leftBefore + (visibleBefore - 1) * 0.5;
+    if (rect && rect.width > 0) {
+      const lowerEnabled = state.indicators.rsi || state.indicators.macd;
+      const frame = buildChartFrame(baseCanvas, symbol, lowerEnabled, slotIndex);
+      if (frame && frame.candleGap) {
+        const localX = clientX - rect.left;
+        const clampedX = clamp(localX, frame.padding, rect.width - frame.padding);
+        const idxInView = clamp(Math.round((clampedX - frame.padding) / frame.candleGap), 0, visibleBefore - 1);
+        anchorIndex = leftBefore + idxInView;
+      } else {
+        const ratio = clamp((clientX - rect.left) / Math.max(1, rect.width), 0, 1);
+        anchorIndex = leftBefore + ratio * (visibleBefore - 1);
+      }
+    }
 
-  const oldOffset = clamp(Number(viewport.offset) || 0, 0, Math.max(0, total - visibleBefore));
-  const leftBefore = total - visibleBefore - oldOffset;
-  const anchorIndex = leftBefore + ratio * (visibleBefore - 1);
-
-  viewport.zoom = nextZoom;
-  const maxOffsetAfter = Math.max(0, total - visibleAfter);
-  const leftAfter = Math.round(anchorIndex - ratio * (visibleAfter - 1));
-  viewport.offset = clamp(total - visibleAfter - leftAfter, 0, maxOffsetAfter);
-  chartFrames[slotIndex] = null;
-}
+    viewport.zoom = nextZoom;
+    const maxOffsetAfter = Math.max(0, total - visibleAfter);
+    const leftAfter = Math.round(anchorIndex - ((anchorIndex - leftBefore) / Math.max(1, visibleBefore - 1)) * (visibleAfter - 1));
+    viewport.offset = clamp(total - visibleAfter - leftAfter, 0, maxOffsetAfter);
+    viewport.locked = true;
+    viewport.lastTotal = total;
+    chartFrames[slotIndex] = null;
+  }
 
 function flushChartWheelZoom() {
   chartWheelState.raf = 0;
@@ -7461,11 +7560,11 @@ function queueChartZoom(slotIndex, clientX, deltaY) {
   chartWheelState.raf = requestAnimationFrame(flushChartWheelZoom);
 }
 
-function zoomTvAt(slotIndex, clientX, deltaY) {
-  const chart = tvCharts[slotIndex];
-  const container = els.chartTvContainers?.[slotIndex];
-  if (!chart || !container || !chart.timeScale) return;
-  const wheelDelta = clamp(Number(deltaY) || 0, -720, 720);
+  function zoomTvAt(slotIndex, clientX, deltaY) {
+    const chart = tvCharts[slotIndex];
+    const container = els.chartTvContainers?.[slotIndex];
+    if (!chart || !container || !chart.timeScale) return;
+    const wheelDelta = clamp(Number(deltaY) || 0, -720, 720);
   if (Math.abs(wheelDelta) < 0.01) return;
   const factor = clamp(Math.exp(-wheelDelta * 0.0015), 0.72, 1.38);
   const ts = chart.timeScale();
@@ -7498,19 +7597,20 @@ function zoomTvAt(slotIndex, clientX, deltaY) {
   } catch {
     handled = false;
   }
-  if (!handled && typeof ts.getBarSpacing === "function" && typeof ts.setBarSpacing === "function") {
-    const spacing = ts.getBarSpacing();
-    if (Number.isFinite(spacing)) {
-      ts.setBarSpacing(clamp(spacing * factor, TV_BAR_SPACING_MIN, TV_BAR_SPACING_MAX));
+    if (!handled && typeof ts.getBarSpacing === "function" && typeof ts.setBarSpacing === "function") {
+      const spacing = ts.getBarSpacing();
+      if (Number.isFinite(spacing)) {
+        ts.setBarSpacing(clamp(spacing * factor, TV_BAR_SPACING_MIN, TV_BAR_SPACING_MAX));
+      }
     }
+    if (tvViewportLocks[slotIndex] != null) tvViewportLocks[slotIndex] = true;
   }
-}
 
-function startChartPan(event) {
-  if (tvEnabled || !event || event.button !== 0) return false;
-  const slot = getChartSlotFromEvent(event);
-  const symbol = state.chartSlots[slot];
-  if (!symbol) return false;
+  function startChartPan(event) {
+    if (tvEnabled || !event || event.button !== 0) return false;
+    const slot = getChartSlotFromEvent(event);
+    const symbol = state.chartSlots[slot];
+    if (!symbol) return false;
   const allCandles = getCandlesForSymbol(symbol);
   if (!allCandles || allCandles.length < CHART_MIN_VISIBLE + 2) return false;
   const viewport = getChartViewport(slot);
@@ -7518,11 +7618,13 @@ function startChartPan(event) {
   chartPanState.pending = true;
   chartPanState.slot = slot;
   chartPanState.startX = event.clientX;
-  chartPanState.startY = event.clientY;
-  chartPanState.startOffset = Number(viewport.offset) || 0;
-  chartPanState.pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
-  return true;
-}
+    chartPanState.startY = event.clientY;
+    chartPanState.startOffset = Number(viewport.offset) || 0;
+    chartPanState.pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
+    viewport.locked = true;
+    viewport.lastTotal = allCandles.length;
+    return true;
+  }
 
 function moveChartPan(event) {
   if ((!chartPanState.active && !chartPanState.pending) || tvEnabled || !event) return false;
@@ -7552,12 +7654,14 @@ function moveChartPan(event) {
   const deltaCandles = Math.round(deltaPx / Math.max(2, frame.candleGap));
   const viewport = getChartViewport(slot);
   const allCandles = getCandlesForSymbol(symbol);
-  const visible = getVisibleCount(allCandles.length, viewport.zoom);
-  const maxOffset = Math.max(0, allCandles.length - visible);
-  const nextOffset = clamp(chartPanState.startOffset + deltaCandles, 0, maxOffset);
-  if (nextOffset === viewport.offset) return true;
-  viewport.offset = nextOffset;
-  markChartInteraction(180);
+    const visible = getVisibleCount(allCandles.length, viewport.zoom);
+    const maxOffset = Math.max(0, allCandles.length - visible);
+    const nextOffset = clamp(chartPanState.startOffset + deltaCandles, 0, maxOffset);
+    if (nextOffset === viewport.offset) return true;
+    viewport.offset = nextOffset;
+    viewport.locked = true;
+    viewport.lastTotal = allCandles.length;
+    markChartInteraction(180);
   chartFrames[slot] = null;
   state.crosshair.active = false;
   if (els.chartTooltip) els.chartTooltip.classList.add("hidden");
@@ -7713,6 +7817,7 @@ function updateOfflineCandles(symbols) {
 }
 
 function drawCharts() {
+  const start = performance.now();
   const layout = state.chartLayout;
   const tiles = els.chartGrid ? Array.from(els.chartGrid.children) : [];
   tiles.forEach((tile, idx) => {
@@ -7730,6 +7835,8 @@ function drawCharts() {
     const frame = drawChartFor(canvas, symbol, lowerEnabled, i);
     chartFrames[i] = frame;
   }
+  const elapsed = performance.now() - start;
+  updatePerfAuto(elapsed);
 }
 
 function drawChart() {
@@ -7770,7 +7877,8 @@ function resizeBgCanvas() {
 function seedBgParticles() {
   if (!bgState.ctx) return;
   const area = bgState.width * bgState.height;
-  const count = Math.min(240, Math.max(90, Math.floor(area / 12000)));
+  const perfScale = state.perfMode ? 0.6 : 1;
+  const count = Math.min(240, Math.max(60, Math.floor((area / 12000) * perfScale)));
   bgState.particles = Array.from({ length: count }, () => {
     const speed = 0.06 + Math.random() * 0.2;
     const angle = Math.random() * Math.PI * 2;
@@ -7796,7 +7904,7 @@ function updateBgParticles(time) {
   bgLast = time;
   const dtScale = dt / 16.6;
   const storm = !!state.macro.blackSwan;
-  const targetIntensity = storm ? 4.2 : 1;
+  const targetIntensity = storm ? 4.2 : (state.perfMode ? 0.6 : 1);
   bgState.intensity += (targetIntensity - bgState.intensity) * 0.04;
   const isLight = document.body.dataset.theme === "light";
 
@@ -8666,9 +8774,15 @@ function updatePerfMode() {
     ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
     : false;
   const mobile = window.innerWidth <= MOBILE_BREAKPOINT;
-  state.perfMode = reduceMotion || mobile;
+  const nextPerf = reduceMotion || mobile || state.perfAuto;
+  const changed = nextPerf !== state.perfMode;
+  state.perfMode = nextPerf;
   document.body.classList.toggle("perf-mode", state.perfMode);
   document.body.classList.toggle("mobile-lite", mobile);
+  if (changed) {
+    seedBgParticles();
+    applyPerfChartPoints();
+  }
 }
 
 function setupCollapsiblePanels() {
@@ -8930,11 +9044,16 @@ function bindEvents() {
       if (e.cancelable) e.preventDefault();
     }, { passive: false });
     els.chartArea.addEventListener("dblclick", (e) => {
-      if (tvEnabled) return;
       const slot = getChartSlotFromEvent(e);
       markChartInteraction(220);
-      resetChartViewport(slot, false);
-      scheduleChartDraw();
+      if (tvEnabled) {
+        if (tvViewportLocks[slot] != null) tvViewportLocks[slot] = false;
+        const chart = tvCharts[slot];
+        if (chart && chart.timeScale) chart.timeScale().fitContent();
+      } else {
+        resetChartViewport(slot, false);
+        scheduleChartDraw();
+      }
     });
     els.chartArea.addEventListener("pointerleave", () => {
       if (chartPanState.active || chartPanState.pending) return;
@@ -9291,7 +9410,7 @@ function bindEvents() {
         if (!username) return;
         const confirmCode = await adminPrompt({
           title: "Ma xac nhan",
-          text: "Nhap ma xac nhan (ma sep):",
+          text: "Nhập mã xác nhận (mã sếp):",
           type: "password"
         });
         if (!confirmCode) return;
@@ -9311,7 +9430,7 @@ function bindEvents() {
         }
         const confirmCode = await adminPrompt({
           title: "Ma xac nhan",
-          text: "Nhap ma xac nhan (ma sep):",
+          text: "Nhập mã xác nhận (mã sếp):",
           type: "password"
         });
         if (!confirmCode) return;
@@ -9360,7 +9479,7 @@ function bindEvents() {
         if (!username) return;
         const group = await adminPrompt({
           title: "Nhom nguoi dung",
-          text: "Nhap nhom (VIP/test/suspect...):",
+          text: "Nhập nhóm (VIP/test/suspect...):",
           value: ""
         });
         if (group == null) return;
@@ -9373,7 +9492,7 @@ function bindEvents() {
         if (!username) return;
         const tags = await adminPrompt({
           title: "Tags rui ro",
-          text: "Nhap tags (phan tach bang dau phay):",
+          text: "Nhập tags (phân tách bằng dấu phẩy):",
           value: ""
         });
         if (tags == null) return;
@@ -10212,8 +10331,8 @@ function bindEvents() {
       });
       btn.classList.add("active");
       const map = { "1m": 80, "5m": 120, "15m": 160, "1h": 200, "1d": 240 };
-      state.chartPoints = map[btn.dataset.tf];
-      normalizeChartDataLength();
+      state.chartPointsDesired = map[btn.dataset.tf];
+      applyPerfChartPoints();
       scheduleChartDraw();
     });
   });
@@ -10365,6 +10484,7 @@ function init() {
   initMarket();
   initSocket();
   loadLocal();
+  applyPerfChartPoints();
   setCompactMode(state.compactMode);
   loadTodayAssist();
   state.weeklyLeaderboard = loadWeeklyLeaderboard();
@@ -10730,8 +10850,8 @@ async function sendAdminAction(action, extra = {}) {
   }
   adminState.pending = payload;
   const pass = await adminPrompt({
-    title: "Mat khau admin",
-    text: "Nhap mat khau admin:",
+    title: "Mật khẩu admin",
+    text: "Nhập mật khẩu admin:",
     type: "password"
   });
   if (!pass) {
@@ -10740,13 +10860,13 @@ async function sendAdminAction(action, extra = {}) {
   }
   const otp = await adminPrompt({
     title: "OTP admin",
-    text: "Nhap OTP admin (neu co):",
+    text: "Nhập OTP admin (nếu có):",
     type: "text",
     value: ""
   });
   const ownerCode = await adminPrompt({
-    title: "Ma sep (toan quyen)",
-    text: "Nhap ma sep neu can toan quyen:",
+    title: "Mã sếp (toàn quyền)",
+    text: "Nhập mã sếp nếu cần toàn quyền:",
     type: "password",
     value: ""
   });

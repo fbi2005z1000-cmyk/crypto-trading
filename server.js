@@ -180,6 +180,7 @@ let coins = [...baseCoins];
 const market = {};
 const marketTrends = {};
 const marketMeta = {};
+const marketRegimes = {};
 let users = Object.create(null);
 const sockets = Object.create(null); // username -> socket
 const socketSessions = new Map(); // socket.id -> username
@@ -2259,15 +2260,15 @@ function initMarket() {
     candleHistory[coin.symbol] = [];
     let lastClose = seed;
     const now = Math.floor(Date.now() / 1000);
-    for (let i = CANDLE_INIT; i > 0; i -= 1) {
-      const time = now - i * CANDLE_INTERVAL_SEC;
-      const open = lastClose;
-      const close = open * (1 + (Math.random() - 0.5) * 0.01);
-      const high = Math.max(open, close) * (1 + Math.random() * 0.005);
-      const low = Math.min(open, close) * (1 - Math.random() * 0.005);
-      candleHistory[coin.symbol].push({ time, open, high, low, close });
-      lastClose = close;
-    }
+      for (let i = CANDLE_INIT; i > 0; i -= 1) {
+        const time = now - i * CANDLE_INTERVAL_SEC;
+        const open = lastClose;
+        const close = open * (1 + (Math.random() - 0.5) * 0.002);
+        const high = Math.max(open, close) * (1 + Math.random() * 0.002);
+        const low = Math.min(open, close) * (1 - Math.random() * 0.002);
+        candleHistory[coin.symbol].push({ time, open, high, low, close });
+        lastClose = close;
+      }
     const bucket = now - (now % CANDLE_INTERVAL_SEC);
     currentCandles[coin.symbol] = {
       time: bucket,
@@ -2283,13 +2284,13 @@ function reseedCandlesAroundPrice(symbol, price, volHint = 0.003) {
   const history = [];
   let lastClose = price;
   const now = Math.floor(Date.now() / 1000);
-  const vol = Math.max(0.0003, Math.min(0.006, Number(volHint) || 0.003));
+  const vol = Math.max(0.0002, Math.min(0.003, Number(volHint) || 0.003));
   for (let i = CANDLE_INIT; i > 0; i -= 1) {
     const time = now - i * CANDLE_INTERVAL_SEC;
     const open = lastClose;
     const drift = (Math.random() - 0.5) * vol;
     const close = Math.max(0.0000001, open * (1 + drift));
-    const wick = Math.max(0.0002, Math.random() * (vol * 0.8));
+    const wick = Math.max(0.00015, Math.random() * (vol * 0.5));
     const high = Math.max(open, close) * (1 + wick);
     const low = Math.max(0.0000001, Math.min(open, close) * (1 - wick));
     history.push({ time, open, high, low, close });
@@ -2394,12 +2395,44 @@ function removeCoin(symbol) {
   delete market[sym];
   delete marketTrends[sym];
   delete marketMeta[sym];
+  delete marketRegimes[sym];
   delete candleHistory[sym];
   delete currentCandles[sym];
   settings.removedCoins = settings.removedCoins || [];
   if (!settings.removedCoins.includes(sym)) settings.removedCoins.push(sym);
   saveSettings();
   return true;
+}
+
+function ensureMarketRegime(coin, m, meta, now) {
+  const sym = coin.symbol;
+  const existing = marketRegimes[sym] || meta.regime;
+  if (existing && existing.until && now < existing.until) {
+    marketRegimes[sym] = existing;
+    return existing;
+  }
+
+  const roll = Math.random();
+  const type = roll < 0.55 ? "sideways" : "trend";
+  const dir = Math.random() > 0.5 ? 1 : -1;
+  const strength = type === "trend"
+    ? 0.18 + Math.random() * 0.35
+    : 0.05 + Math.random() * 0.08;
+  const durationMin = type === "trend"
+    ? 6 + Math.random() * 12
+    : 4 + Math.random() * 10;
+  const anchor = Number.isFinite(m?.price) && m.price > 0 ? m.price : (coin.base || 1);
+  const regime = {
+    type,
+    dir,
+    strength,
+    anchor,
+    until: now + durationMin * 60 * 1000
+  };
+  marketRegimes[sym] = regime;
+  meta.regime = regime;
+  marketMeta[sym] = meta;
+  return regime;
 }
 
 function updateMarketLogic(coin) {
@@ -2444,11 +2477,25 @@ function updateMarketLogic(coin) {
   const baseVol = Number.isFinite(coin.vol) ? coin.vol : 0.003;
   const coinScale = Number(settings.coinVolScale?.[coin.symbol]) || 1;
   const staleLive = !meta.lastLive || now - meta.lastLive > LIVE_STALE_MS * 10;
-  const cap = staleLive ? 0.004 : 0.01;
-  const floor = staleLive ? 0.0003 : 0.0005;
-  const mult = staleLive ? 0.9 : 1.5;
+  const cap = staleLive ? 0.0022 : 0.0035;
+  const floor = staleLive ? 0.00018 : 0.00028;
+  const mult = staleLive ? 0.7 : 1.1;
   const volatility = Math.max(floor, Math.min(cap, baseVol * mult)) * godMode.volScale * coinScale;
-  const change = 1 + (Math.random() * volatility * 2 - volatility);
+  const regime = ensureMarketRegime(coin, m, meta, now);
+  const noiseScale = regime.type === "sideways" ? 0.55 : 0.85;
+  const rawNoise = (Math.random() * 2 - 1) * volatility * noiseScale;
+  let drift = 0;
+  if (regime.type === "trend") {
+    drift = regime.dir * regime.strength * volatility;
+  } else if (regime.type === "sideways") {
+    const anchor = Number.isFinite(regime.anchor) && regime.anchor > 0 ? regime.anchor : m.price;
+    const pull = anchor > 0 ? (anchor - m.price) / anchor : 0;
+    drift = Math.max(-0.003, Math.min(0.003, pull)) * 0.4;
+  }
+  const rawStep = rawNoise + drift;
+  const maxStep = staleLive ? 0.0016 : 0.003;
+  const step = Math.max(-maxStep, Math.min(maxStep, rawStep));
+  const change = 1 + step;
   const minPrice = 0.0000001;
   const newPrice = Math.max(minPrice, m.price * change);
 
