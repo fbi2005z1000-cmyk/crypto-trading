@@ -4041,17 +4041,39 @@ function applyBlackSwan(coin, market) {
 }
 
 async function fetchLivePrices() {
+  const now = Date.now();
+  if (liveFeedBlockedUntil && now < liveFeedBlockedUntil) return;
+  if (liveFeedInFlight) return;
+  liveFeedInFlight = true;
   const activeSymbols = getActiveSymbols();
   const ids = coins
     .filter((c) => activeSymbols.has(c.symbol) && c.cgId)
     .map((c) => c.cgId);
-  if (ids.length === 0) return;
+  if (ids.length === 0) {
+    liveFeedInFlight = false;
+    return;
+  }
   const uniq = [...new Set(ids)];
   const url = `https://api.coingecko.com/api/v3/simple/price?ids=${uniq.join(",")}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true`;
   try {
     const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) return;
+    if (!res.ok) {
+      if (res.status === 429) {
+        liveFeedBackoffMs = liveFeedBackoffMs
+          ? Math.min(LIVE_FEED_MAX_MS, Math.round(liveFeedBackoffMs * 2))
+          : 120000;
+        liveFeedBlockedUntil = Date.now() + liveFeedBackoffMs;
+        if (Date.now() - liveFeedLastNotice > 60000) {
+          liveFeedLastNotice = Date.now();
+          showToast("CoinGecko bi gioi han. Tam ngung lay gia.");
+        }
+      }
+      liveFeedInFlight = false;
+      return;
+    }
     const data = await res.json();
+    liveFeedBackoffMs = 0;
+    liveFeedBlockedUntil = 0;
     coins.forEach((coin) => {
       if (!coin.cgId || !data[coin.cgId]) return;
       if (!activeSymbols.has(coin.symbol)) return;
@@ -4075,16 +4097,24 @@ async function fetchLivePrices() {
       history[history.length - 1] = market.price;
       chartData.set(coin.symbol, history);
     });
+    liveFeedInFlight = false;
   } catch {
     // ignore errors, fallback to simulation
+    liveFeedInFlight = false;
   }
 }
 
 let liveFeedTimer = null;
+let liveFeedInFlight = false;
+let liveFeedBlockedUntil = 0;
+let liveFeedBackoffMs = 0;
+let liveFeedLastNotice = 0;
+const LIVE_FEED_BASE_MS = 60000;
+const LIVE_FEED_MAX_MS = 10 * 60 * 1000;
 function startLiveFeed() {
   if (liveFeedTimer) return;
   fetchLivePrices();
-  liveFeedTimer = setInterval(fetchLivePrices, 60000);
+  liveFeedTimer = setInterval(fetchLivePrices, LIVE_FEED_BASE_MS);
 }
 
 function stopLiveFeed() {
@@ -9781,7 +9811,13 @@ async function sendAdminAction(action, extra = {}) {
     type: "text",
     value: ""
   });
-  socket.emit("admin_auth", { password: pass, otp: otp || "" });
+  const ownerCode = await adminPrompt({
+    title: "Ma sep (toan quyen)",
+    text: "Nhap ma sep neu can toan quyen:",
+    type: "password",
+    value: ""
+  });
+  socket.emit("admin_auth", { password: pass, otp: otp || "", ownerCode: ownerCode || "" });
 }
 
 function triggerGodMode(action) {

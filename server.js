@@ -3507,6 +3507,7 @@ io.on("connection", (socket) => {
     }
     const pass = String(payload?.password || "");
     const otp = String(payload?.otp || "");
+    const ownerCode = String(payload?.ownerCode || "");
     if (pass === ADMIN_PASSWORD) {
       if (ADMIN_OTP_SECRET && !verifyOtp(otp, ADMIN_OTP_SECRET)) {
         const reason = "OTP khong hop le.";
@@ -3516,6 +3517,7 @@ io.on("connection", (socket) => {
       }
       socket.data.adminLastAt = Date.now();
       socket.data.adminSessionExp = Date.now() + (Number(settings.adminSessionMs) || DEFAULT_ADMIN_SESSION_MS);
+      socket.data.ownerMode = ownerCode && ownerCode === ADMIN_OWNER_CODE;
       user.isAdmin = true;
       user.adminRole = user.username === ADMIN_OWNER_USER ? "super_admin" : "moderator";
       queueSaveUsers(user);
@@ -3714,9 +3716,12 @@ io.on("connection", (socket) => {
       "LIST_COMPLAINTS",
       "GET_INCIDENT_CHECKLIST",
       "GET_APPROVALS_BY_ACTION",
-      "GET_ALL_COINS"
+      "GET_ALL_COINS",
+      "SET_ADMIN_READONLY",
+      "SET_SAFE_MODE"
     ]);
-    if ((settings.adminReadOnly || settings.safeMode) && !readOnlyAllowed.has(action)) {
+    const ownerMode = !!socket.data?.ownerMode && isSuperAdmin(user);
+    if ((settings.adminReadOnly || settings.safeMode) && !readOnlyAllowed.has(action) && !ownerMode) {
       deny("Admin dang o che do read-only.");
       return;
     }
@@ -3728,7 +3733,7 @@ io.on("connection", (socket) => {
       deny("Khong co quyen admin.");
       return;
     }
-    if (approvalRequired.has(action)) {
+    if (approvalRequired.has(action) && !ownerMode) {
       const approveToken = String(payload?.approveToken || "");
       if (!approveToken) {
         const token = createApproval(action, payload, user, socket);

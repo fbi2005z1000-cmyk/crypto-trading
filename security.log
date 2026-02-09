@@ -1184,3 +1184,6 @@
 {"ts":"2026-02-07T09:58:13.255Z","type":"price_spike","message":"Gia bien dong bat thuong.","meta":{"symbol":"PEPE","deltaPct":22.150894345652553,"haltUntil":1770458353247}}
 {"ts":"2026-02-07T09:58:23.055Z","type":"price_spike","message":"Gia bien dong bat thuong.","meta":{"symbol":"BTC","deltaPct":17.065738258288672,"haltUntil":1770458363055}}
 {"ts":"2026-02-07T10:03:26.353Z","type":"price_spike","message":"Gia bien dong bat thuong.","meta":{"symbol":"FRAX","deltaPct":-28.52294234496408,"haltUntil":1770458666352}}
+{"ts":"2026-02-07T13:38:29.625Z","type":"price_spike","message":"Gia bien dong bat thuong.","meta":{"symbol":"BTC","deltaPct":43.20729777659569,"haltUntil":1770471569624}}
+{"ts":"2026-02-07T13:38:30.250Z","type":"price_spike","message":"Gia bien dong bat thuong.","meta":{"symbol":"BTC","deltaPct":-30.20022872093433,"haltUntil":1770471570250}}
+{"ts":"2026-02-07T13:39:39.949Z","type":"price_spike","message":"Gia bien dong bat thuong.","meta":{"symbol":"BTC","deltaPct":-23.009464508785975,"haltUntil":1770471639949}}

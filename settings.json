@@ -21,7 +21,7 @@
   },
   "adminIdleMs": 600000,
   "adminSessionMs": 3600000,
-  "adminReadOnly": true,
+  "adminReadOnly": false,
   "safeMode": false,
   "adminRateLimits": {
     "super": 5,
