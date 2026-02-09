@@ -12,6 +12,11 @@ const PORT = process.env.PORT || 3000;
 const FX_RATE = 24500;
 const BASE_FEE_RATE = 0.001;
 const MAINTENANCE_RATE = 0.5;
+const MAX_CANDLE_BODY_PCT_DEFAULT = 0.4;
+const CHAT_HISTORY_LIMIT = 200;
+const CHAT_RATE_WINDOW_MS = 4000;
+const CHAT_RATE_MAX = 6;
+const LEADERBOARD_LIMIT = 100;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const ADMIN_OWNER_USER = process.env.ADMIN_OWNER_USER;
 const ADMIN_OWNER_PASS = process.env.ADMIN_OWNER_PASS;
@@ -194,6 +199,8 @@ const currentCandles = {};
 let db = new sqlite3.Database(DB_FILE);
 const rateBuckets = new Map();
 const loginGuard = new Map();
+const chatHistory = [];
+const chatBotCooldown = new Map();
 const userLocks = new Map();
 const idempotencyCache = new Map();
 const accessSessions = new Map();
@@ -215,6 +222,7 @@ let settings = {
   cancelPenaltyRate: 0.002,
   circuitBreakerPct: CIRCUIT_BREAK_PCT,
   circuitBreakerWindowMs: CIRCUIT_BREAK_WINDOW_MS,
+  maxCandleBodyPct: MAX_CANDLE_BODY_PCT_DEFAULT,
   alertWebhook: "",
   withdrawalsDisabled: false,
   depositsDisabled: false,
@@ -267,6 +275,9 @@ function loadSettings() {
   settings = { ...settings, ...(data || {}) };
   if (!settings || typeof settings !== "object") {
     settings = { ...settings };
+  }
+  if (typeof settings.maxCandleBodyPct !== "number") {
+    settings.maxCandleBodyPct = MAX_CANDLE_BODY_PCT_DEFAULT;
   }
   if (!settings.groupFees || typeof settings.groupFees !== "object") settings.groupFees = {};
   if (!settings.coinSource || typeof settings.coinSource !== "object") settings.coinSource = {};
@@ -872,6 +883,7 @@ function createUser(username, password) {
     limits: {},
     strikes: 0,
     watchlist: false,
+    lbPrivacy: "public",
     boosters: { insurance: 0, anonymity: 0 },
     inbox: [],
     inventory: [],
@@ -934,6 +946,7 @@ function normalizeUser(user, username) {
   if (!user.limits || typeof user.limits !== "object") user.limits = {};
   if (!Number.isFinite(user.strikes)) user.strikes = 0;
   if (typeof user.watchlist !== "boolean") user.watchlist = false;
+  if (user.lbPrivacy !== "anon") user.lbPrivacy = "public";
   if (!user.boosters || typeof user.boosters !== "object") {
     user.boosters = { insurance: 0, anonymity: 0 };
   }
@@ -988,6 +1001,7 @@ const USER_COLUMNS = [
   "limits",
   "strikes",
   "watchlist",
+  "lbPrivacy",
   "adminRole",
   "isAdmin",
   "locked",
@@ -1262,6 +1276,7 @@ function userToRow(user) {
     encodeJson(user.limits, {}),
     Number.isFinite(user.strikes) ? user.strikes : 0,
     user.watchlist ? 1 : 0,
+    user.lbPrivacy === "anon" ? "anon" : "public",
     user.adminRole || "",
     user.isAdmin ? 1 : 0,
     user.locked ? 1 : 0,
@@ -1306,6 +1321,7 @@ function rowToUser(row) {
     limits: decodeJson(row.limits, {}),
     strikes: Number(row.strikes) || 0,
     watchlist: !!row.watchlist,
+    lbPrivacy: row.lbPrivacy || "public",
     adminRole: row.adminRole || "",
     isAdmin: !!row.isAdmin,
     locked: !!row.locked,
@@ -1350,6 +1366,7 @@ async function initDb() {
     limits TEXT NOT NULL,
     strikes INTEGER NOT NULL,
     watchlist INTEGER NOT NULL,
+    lbPrivacy TEXT NOT NULL,
     adminRole TEXT NOT NULL,
     isAdmin INTEGER NOT NULL,
     locked INTEGER NOT NULL,
@@ -1433,6 +1450,9 @@ async function initDb() {
   }
   if (!names.has("watchlist")) {
     await dbRun("ALTER TABLE users ADD COLUMN watchlist INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!names.has("lbPrivacy")) {
+    await dbRun("ALTER TABLE users ADD COLUMN lbPrivacy TEXT NOT NULL DEFAULT 'public'");
   }
   if (!names.has("boosters")) {
     await dbRun("ALTER TABLE users ADD COLUMN boosters TEXT NOT NULL DEFAULT '{}'");
@@ -1995,6 +2015,122 @@ function calcUserEquityUsd(user) {
   return total;
 }
 
+function hashString(value) {
+  const str = String(value || "");
+  let hash = 0;
+  for (let i = 0; i < str.length; i += 1) {
+    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
+}
+
+function maskUsername(name) {
+  const code = (hashString(name) % 9000) + 1000;
+  return `An danh #${code}`;
+}
+
+function buildRichLeaderboard(limit = LEADERBOARD_LIMIT) {
+  const rows = [];
+  Object.values(users).forEach((user) => {
+    if (!user || user.deleted) return;
+    const equityUsd = calcUserEquityUsd(user);
+    rows.push({
+      username: user.username,
+      equityUsd,
+      privacy: user.lbPrivacy === "anon" ? "anon" : "public"
+    });
+  });
+  rows.sort((a, b) => b.equityUsd - a.equityUsd);
+  return rows.slice(0, limit).map((row, idx) => ({
+    rank: idx + 1,
+    name: row.privacy === "anon" ? maskUsername(row.username) : row.username,
+    equityUsd: row.equityUsd,
+    equityVnd: row.equityUsd * FX_RATE,
+    privacy: row.privacy
+  }));
+}
+
+function emitRichLeaderboard(targetSocket) {
+  const payload = { rows: buildRichLeaderboard(), ts: Date.now() };
+  if (targetSocket) targetSocket.emit("leaderboard_update", payload);
+  else io.emit("leaderboard_update", payload);
+}
+
+function sanitizeChatText(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 280);
+}
+
+function pushChatMessage(entry) {
+  if (!entry) return;
+  chatHistory.push(entry);
+  if (chatHistory.length > CHAT_HISTORY_LIMIT) {
+    chatHistory.splice(0, chatHistory.length - CHAT_HISTORY_LIMIT);
+  }
+  io.emit("chat_message", entry);
+}
+
+function pickBotReply(text) {
+  const t = String(text || "").toLowerCase();
+  if (t.includes("xin chao") || t.includes("hello") || t.includes("hi")) {
+    return "Chao ban, can ho tro gi ve giao dich?";
+  }
+  if (t.includes("mua") || t.includes("long")) {
+    return "Neu ky vong gia tang, hay xem xu huong va dat SL truoc khi vao lenh.";
+  }
+  if (t.includes("ban") || t.includes("short")) {
+    return "Short chi nen dung khi co tin hieu ro. Nho quan ly rui ro.";
+  }
+  if (t.includes("sl") || t.includes("stop")) {
+    return "SL giup bao ve tai khoan. Thu dat SL 1-2% truoc khi vao lenh.";
+  }
+  if (t.includes("tp") || t.includes("chot loi")) {
+    return "TP nen nho, deu va co ke hoach. Thong thuong 2-3% la on.";
+  }
+  if (t.includes("leverage") || t.includes("don bay")) {
+    return "Don bay cao de chay tai khoan nhanh. Thu x10-x20 neu moi.";
+  }
+  const pool = [
+    "Ban co the bat dau nho voi 10% von moi lenh.",
+    "Neu thua lien tuc, hay nghi 10-15 phut va xem lai.",
+    "Quan ly rui ro quan trong hon loi nhuan."
+  ];
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function maybeBotReply(user, text) {
+  const username = user?.username || "";
+  const now = Date.now();
+  const cooldownUntil = chatBotCooldown.get(username) || 0;
+  if (now < cooldownUntil) return;
+  if (Math.random() > 0.6) return;
+  const reply = pickBotReply(text);
+  chatBotCooldown.set(username, now + 8000);
+  setTimeout(() => {
+    pushChatMessage({
+      id: Date.now() + Math.random(),
+      user: "CTA Bot",
+      bot: true,
+      text: reply,
+      ts: Date.now()
+    });
+  }, 700 + Math.random() * 900);
+}
+
+function emitTradeWinNews(user, symbol, pnlUsd, pct) {
+  if (!user) return;
+  const name = user.lbPrivacy === "anon" ? maskUsername(user.username) : user.username;
+  io.emit("news_event", {
+    type: "big_win",
+    symbol,
+    username: name,
+    pnlUsd: Number(pnlUsd) || 0,
+    pct: Number(pct) || 0
+  });
+}
+
 function ensureUser(username, password = "") {
   if (users[username]) {
     users[username] = normalizeUser(users[username], username);
@@ -2416,8 +2552,8 @@ function ensureMarketRegime(coin, m, meta, now) {
   const type = roll < 0.55 ? "sideways" : "trend";
   const dir = Math.random() > 0.5 ? 1 : -1;
   const strength = type === "trend"
-    ? 0.18 + Math.random() * 0.35
-    : 0.05 + Math.random() * 0.08;
+    ? 0.08 + Math.random() * 0.22
+    : 0.03 + Math.random() * 0.05;
   const durationMin = type === "trend"
     ? 6 + Math.random() * 12
     : 4 + Math.random() * 10;
@@ -2477,27 +2613,35 @@ function updateMarketLogic(coin) {
   const baseVol = Number.isFinite(coin.vol) ? coin.vol : 0.003;
   const coinScale = Number(settings.coinVolScale?.[coin.symbol]) || 1;
   const staleLive = !meta.lastLive || now - meta.lastLive > LIVE_STALE_MS * 10;
-  const cap = staleLive ? 0.0022 : 0.0035;
-  const floor = staleLive ? 0.00018 : 0.00028;
-  const mult = staleLive ? 0.7 : 1.1;
+  const cap = staleLive ? 0.0012 : 0.0016;
+  const floor = staleLive ? 0.00008 : 0.00012;
+  const mult = staleLive ? 0.5 : 0.7;
   const volatility = Math.max(floor, Math.min(cap, baseVol * mult)) * godMode.volScale * coinScale;
   const regime = ensureMarketRegime(coin, m, meta, now);
-  const noiseScale = regime.type === "sideways" ? 0.55 : 0.85;
+  const noiseScale = regime.type === "sideways" ? 0.35 : 0.55;
   const rawNoise = (Math.random() * 2 - 1) * volatility * noiseScale;
   let drift = 0;
   if (regime.type === "trend") {
-    drift = regime.dir * regime.strength * volatility;
+    drift = regime.dir * regime.strength * volatility * 0.6;
   } else if (regime.type === "sideways") {
     const anchor = Number.isFinite(regime.anchor) && regime.anchor > 0 ? regime.anchor : m.price;
     const pull = anchor > 0 ? (anchor - m.price) / anchor : 0;
-    drift = Math.max(-0.003, Math.min(0.003, pull)) * 0.4;
+    drift = Math.max(-0.002, Math.min(0.002, pull)) * 0.25;
   }
   const rawStep = rawNoise + drift;
-  const maxStep = staleLive ? 0.0016 : 0.003;
+  const maxStep = staleLive ? 0.0009 : 0.0016;
   const step = Math.max(-maxStep, Math.min(maxStep, rawStep));
   const change = 1 + step;
   const minPrice = 0.0000001;
-  const newPrice = Math.max(minPrice, m.price * change);
+  let newPrice = Math.max(minPrice, m.price * change);
+  const maxBodyPct = Number(settings.maxCandleBodyPct) || MAX_CANDLE_BODY_PCT_DEFAULT;
+  if (m.price > 0 && maxBodyPct > 0) {
+    const bodyPct = Math.abs((newPrice - m.price) / m.price) * 100;
+    if (bodyPct > maxBodyPct) {
+      const dir = newPrice >= m.price ? 1 : -1;
+      newPrice = Math.max(minPrice, m.price * (1 + dir * (maxBodyPct / 100)));
+    }
+  }
 
   m.prev = m.price;
   m.price = newPrice;
@@ -3732,6 +3876,7 @@ io.on("connection", (socket) => {
       "SET_COIN_SOURCE",
       "SET_COIN_VOL",
       "SET_SLIPPAGE",
+      "SET_MAX_CANDLE_BODY",
       "SET_BLOCK_STALE",
       "SET_MARGIN_ENABLED",
       "SET_CANCEL_PENALTY",
@@ -4450,6 +4595,7 @@ io.on("connection", (socket) => {
         marginEnabled: !!settings.marginEnabled,
         blockStalePrice: !!settings.blockStalePrice,
         slippagePct: Number(settings.slippagePct) || 0,
+        maxCandleBodyPct: Number(settings.maxCandleBodyPct) || MAX_CANDLE_BODY_PCT_DEFAULT,
         strikeLimit: Number(settings.strikeLimit) || STRIKE_LIMIT_DEFAULT,
         cancelPenaltyRate: Number(settings.cancelPenaltyRate) || 0,
         circuitBreakerPct: Number(settings.circuitBreakerPct) || CIRCUIT_BREAK_PCT,
@@ -4602,6 +4748,18 @@ io.on("connection", (socket) => {
         return;
       }
       settings.slippagePct = pct;
+      saveSettings();
+      logAdminAction(socket, user, action, payload, true);
+      socket.emit("admin_notice", { ok: true, settings: true });
+      return;
+    }
+    if (action === "SET_MAX_CANDLE_BODY") {
+      const pct = Number(payload?.maxCandleBodyPct);
+      if (!Number.isFinite(pct) || pct <= 0 || pct > 25) {
+        deny("Max than nen khong hop le.");
+        return;
+      }
+      settings.maxCandleBodyPct = pct;
       saveSettings();
       logAdminAction(socket, user, action, payload, true);
       socket.emit("admin_notice", { ok: true, settings: true });
@@ -5818,10 +5976,52 @@ io.on("connection", (socket) => {
               pct,
               symbol: result.symbol || symbol
             });
+            emitTradeWinNews(user, result.symbol || symbol, pnlUsd, pct);
           }
         }
       }
     });
+  });
+
+  socket.on("chat_history_request", () => {
+    socket.emit("chat_history", { items: chatHistory.slice(-CHAT_HISTORY_LIMIT) });
+  });
+
+  socket.on("chat_send", (payload) => {
+    const user = requireUser(socket);
+    if (!user) return;
+    if (!rateLimit(`chat:${user.username}`, CHAT_RATE_MAX, CHAT_RATE_WINDOW_MS)) {
+      socket.emit("chat_error", { reason: "Chat qua nhanh. Vui long thu lai." });
+      return;
+    }
+    const text = sanitizeChatText(payload?.text);
+    if (!text) return;
+    const entry = {
+      id: Date.now() + Math.random(),
+      user: user.username,
+      text,
+      ts: Date.now()
+    };
+    pushChatMessage(entry);
+    maybeBotReply(user, text);
+  });
+
+  socket.on("leaderboard_request", () => {
+    const user = getSessionUser(socket);
+    socket.emit("leaderboard_update", {
+      rows: buildRichLeaderboard(),
+      selfPrivacy: user?.lbPrivacy === "anon" ? "anon" : "public"
+    });
+  });
+
+  socket.on("set_leaderboard_privacy", async (payload) => {
+    const user = requireUser(socket);
+    if (!user) return;
+    const value = payload?.value === "anon" ? "anon" : "public";
+    user.lbPrivacy = value;
+    await queueSaveUsers(user);
+    socket.emit("leaderboard_privacy", { value });
+    emitRichLeaderboard();
   });
 
   socket.on("logout", async () => {
@@ -5843,6 +6043,7 @@ async function bootstrap() {
   scheduleMaintenanceJobs();
   await loadUsersFromDisk();
   queueSaveUsers();
+  setInterval(() => emitRichLeaderboard(), 30000);
 
   let binanceSet = new Set();
   try {

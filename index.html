@@ -59,6 +59,14 @@
       </div>
       <div class="academy-title" id="academyTitle">Học viện Trading Tương tác</div>
       <div class="academy-text" id="academyText"></div>
+      <div class="academy-checklist" id="academyChecklist"></div>
+      <div class="academy-status" id="academyStatus"></div>
+      <div class="academy-tools" id="academyTools">
+        <button id="academySpeak" type="button">Nghe đọc</button>
+        <button id="academyTip" type="button">Tip</button>
+        <button id="academyQuiz" type="button">Quiz</button>
+        <button id="academyPractice" type="button">Luyện tập</button>
+      </div>
       <div class="academy-progress">
         <div class="academy-progress-fill" id="academyProgressFill"></div>
       </div>
@@ -185,6 +193,8 @@
           <button class="time-btn ind" data-ind="rsi">RSI</button>
           <button class="time-btn ind" data-ind="bb">BOLL</button>
           <button class="time-btn ind" data-ind="macd">MACD</button>
+          <button class="time-btn ind" data-ind="atr">ATR</button>
+          <button class="time-btn ind" data-ind="vp">VP</button>
         </div>
       </div>
       <div class="tip-chips" id="tipChips" data-tips="1">
@@ -196,6 +206,13 @@
       <div class="practice-controls">
         <button id="practiceBtn" class="mini" type="button">Thực hành 3 phút</button>
         <button id="focusToggle" class="mini" type="button">Tập trung 1 coin</button>
+      </div>
+      <div class="replay-controls">
+        <button id="replayToggle" class="mini" type="button">Replay 5 phút</button>
+        <div class="replay-slider hidden" id="replaySliderWrap">
+          <input id="replayRange" type="range" min="0" max="5" step="1" value="0" />
+          <span id="replayLabel">-0m</span>
+        </div>
       </div>
       <div class="chart-wrap" id="chartArea">
           <div class="chart-grid layout-1" id="chartGrid">
@@ -442,6 +459,20 @@
       <div class="orders-list" id="openOrders"></div>
     </section>
 
+    <section class="panel chat" id="panelChat">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Trò chuyện</div>
+          <div class="panel-sub">Phòng chat chung</div>
+        </div>
+      </div>
+      <div class="chat-body" id="chatMessages"></div>
+      <div class="chat-input">
+        <input id="chatInput" placeholder="Nhập tin nhắn..." />
+        <button id="chatSendBtn" type="button">Gửi</button>
+      </div>
+    </section>
+
     <section class="panel gamify">
       <div class="panel-head">
         <div>
@@ -502,6 +533,11 @@
       <div class="booster-shop" id="boosterShop"></div>
       <div class="booster-inv" id="boosterInventory"></div>
       <div class="achievement-list" id="achievementList"></div>
+      <div class="leaderboard-controls">
+        <div class="leaderboard-title">BXH đại gia (Top 100)</div>
+        <button id="lbPrivacyBtn" class="mini" type="button">Công khai</button>
+      </div>
+      <div class="leaderboard rich" id="richLeaderboard"></div>
       <div class="leaderboard" id="leaderboard"></div>
       <div class="leaderboard" id="weeklyLeaderboard"></div>
       <div class="lesson-history" id="lessonHistory">
@@ -798,6 +834,8 @@
         <label class="admin-check"><input type="checkbox" id="adminReadOnly" /> Admin chỉ đọc</label>
         <input type="number" id="adminSlippage" placeholder="Trượt giá (%)" step="0.01" />
         <button id="adminSetSlippage" type="button">Cập nhật trượt giá</button>
+        <input type="number" id="adminMaxCandleBodyPct" placeholder="Max thân nến (%)" step="0.1" />
+        <button id="adminSetMaxCandleBodyPct" type="button">Cập nhật max nến</button>
         <input type="number" id="adminCancelPenalty" placeholder="Phí phạt hủy" step="0.0001" />
         <button id="adminSetCancelPenalty" type="button">Cập nhật phạt hủy</button>
         <input type="number" id="adminStrikeLimit" placeholder="Giới hạn strike" step="1" />

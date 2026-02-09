@@ -3,6 +3,7 @@ const BASE_FEE_RATE = 0.001;
 const FUNDING_RATE = 0.0001;
 const FUNDING_INTERVAL_MS = 60000;
 const MAINTENANCE_RATE = 0.5;
+const MAX_CANDLE_BODY_PCT_DEFAULT = 1.2;
 const FEE_TIERS = [
   { volume: 0, discount: 0 },
   { volume: 50000, discount: 0.05 },
@@ -200,6 +201,11 @@ const adminState = {
   role: "",
   settings: {}
 };
+function getMaxCandleBodyPct() {
+  const raw = Number(adminState.settings?.maxCandleBodyPct);
+  if (Number.isFinite(raw) && raw > 0) return raw;
+  return MAX_CANDLE_BODY_PCT_DEFAULT;
+}
 let adminKpiTimer = null;
 let broadcastTimerId = null;
 let broadcastHideTimer = null;
@@ -235,7 +241,9 @@ const state = {
     macd: false,
     ema9: false,
     ema21: false,
-    ma200: false
+    ma200: false,
+    atr: false,
+    vp: false
   },
   volBoosts: {},
   newsItems: [],
@@ -268,6 +276,9 @@ const state = {
   equityHistory: [],
   leaderboard: [],
   weeklyLeaderboard: [],
+  richLeaderboard: [],
+  leaderboardPrivacy: "public",
+  chatMessages: [],
   marketFromServer: false,
   marketCollapsed: false,
   quickLetter: "",
@@ -278,7 +289,11 @@ const state = {
   compactMode: false,
   focusMode: false,
   tipAudioEnabled: true,
+  academyFlags: {},
+  academyManual: {},
+  academyLang: "vi",
   practice: { active: false, remaining: 0, sl: false, tp: false, order: false },
+  replay: { active: false, offset: 0, max: 5, anchors: {} },
   lastOrderMeta: { hasSLTP: false, leverage: 1, qty: 0, notional: 0 },
   crosshair: { active: false, slot: -1, x: 0, y: 0, price: 0, candle: null }
 };
@@ -543,6 +558,7 @@ function claimDailyCheckin() {
   addXp(reward);
   showToast(`Điểm danh thành công! +${reward} XP (Chuỗi ${nextStreak} ngày)`);
   renderDailyCheckin();
+  markAcademyFlag("daily_checkin");
 }
 
 function renderSpinStatus() {
@@ -623,6 +639,7 @@ function canPredict() {
 
 function startPredict(direction) {
   if (!canPredict()) return;
+  markAcademyFlag("predict_candle");
   const symbol = state.selected;
   const market = state.market[symbol];
   if (!market) {
@@ -755,6 +772,26 @@ const onboardingSteps = [
     target: () => els.authLoginBtn
   }
 ];
+
+const onboardingStepsFixed = [
+  {
+    title: "Bước 1: Nhập tài khoản",
+    text: "Nhập tài khoản bạn muốn dùng để vào game.",
+    target: () => els.authUsername
+  },
+  {
+    title: "Bước 2: Mật khẩu",
+    text: "Nhập mật khẩu để đăng nhập hoặc đăng ký.",
+    target: () => els.authPassword
+  },
+  {
+    title: "Bước 3: Đăng nhập",
+    text: "Bấm Đăng nhập để bắt đầu trải nghiệm.",
+    target: () => els.authLoginBtn
+  }
+];
+onboardingSteps.length = 0;
+onboardingSteps.push(...onboardingStepsFixed);
 
 let onboardingIndex = 0;
 let onboardingActive = false;
@@ -972,10 +1009,642 @@ const academySteps = [
   }
 ];
 
+function buildAcademySteps() {
+  const m = (id, vi, en, required = true) => ({ id, vi, en, manual: true, required });
+  const a = (id, vi, en, required = true) => ({ id, vi, en, manual: false, required });
+  return [
+    {
+      target: null,
+      title: {
+        vi: "Bắt đầu: Mục tiêu và kỷ luật",
+        en: "Start: Goal and discipline"
+      },
+      body: {
+        vi: "Mục tiêu là giao dịch có kế hoạch và bảo toàn vốn trước khi tìm lợi nhuận. Hãy xem đây là lộ trình thực hành từng bước.",
+        en: "The goal is planned trading and capital protection before profits. Treat this as a step-by-step practice path."
+      },
+      checklist: [m("academy_intro_read", "Đã đọc mục tiêu và quy tắc học", "I read the goal and study rules")]
+    },
+    {
+      target: "#panelMarket",
+      title: {
+        vi: "Bố cục tổng quan",
+        en: "Layout overview"
+      },
+      body: {
+        vi: "Bên trái là thị trường, giữa là biểu đồ, bên phải là đặt lệnh và ví. Làm quen vị trí để thao tác nhanh.",
+        en: "Left is market, center is chart, right is order and wallet. Learn positions to act faster."
+      },
+      checklist: [m("academy_layout_seen", "Đã nhìn qua các khu vực chính", "I scanned the main sections")]
+    },
+    {
+      target: "#tickerTrack",
+      title: {
+        vi: "Thanh giá chạy (Ticker)",
+        en: "Live ticker"
+      },
+      body: {
+        vi: "Màu xanh là giá tăng, màu đỏ là giá giảm. Đây là nhịp thở thị trường theo thời gian thực.",
+        en: "Green means rising price, red means falling. This is the market heartbeat in real time."
+      },
+      checklist: [a("view_ticker", "Chạm vào thanh giá một lần", "Tap the ticker once")]
+    },
+    {
+      target: "#chartArea",
+      title: {
+        vi: "Khu vực biểu đồ",
+        en: "Chart area"
+      },
+      body: {
+        vi: "Biểu đồ là nơi ra quyết định. Di chuột lên biểu đồ để xem giá tại từng thời điểm.",
+        en: "The chart is where decisions are made. Move your cursor to inspect prices over time."
+      },
+      checklist: [a("view_chart", "Di chuột trên biểu đồ", "Move the cursor on the chart")]
+    },
+    {
+      target: "#chartArea",
+      title: {
+        vi: "Cấu trúc nến cơ bản",
+        en: "Candle anatomy"
+      },
+      body: {
+        vi: "Thân nến là khoảng mở-đóng, râu nến là giá cao-thấp. Thân dài thể hiện lực mạnh.",
+        en: "The body is open-close, the wicks are high-low. A long body shows strong momentum."
+      },
+      tipKey: "candle",
+      checklist: [m("academy_candle_read", "Đã hiểu thân và râu nến", "I understand candle body and wicks")]
+    },
+    {
+      target: ".time-btn[data-tf]",
+      title: {
+        vi: "Khung thời gian",
+        en: "Timeframe"
+      },
+      body: {
+        vi: "Khung nhỏ để vào lệnh, khung lớn để nhìn xu hướng. Hãy thử đổi khung 1m/5m/1h.",
+        en: "Smaller frames for entries, larger frames for trend. Try switching 1m/5m/1h."
+      },
+      checklist: [a("change_timeframe", "Đổi khung thời gian một lần", "Switch timeframe once")]
+    },
+    {
+      target: "#chartArea",
+      title: {
+        vi: "Xu hướng chính",
+        en: "Primary trend"
+      },
+      body: {
+        vi: "Đỉnh sau cao hơn đỉnh trước, đáy sau cao hơn đáy trước là xu hướng tăng. Ngược lại là xu hướng giảm.",
+        en: "Higher highs and higher lows mean uptrend. Lower highs and lower lows mean downtrend."
+      },
+      tipKey: "trend",
+      checklist: [m("academy_trend_read", "Đã hiểu định nghĩa xu hướng", "I understand trend definition")]
+    },
+    {
+      target: "#chartArea",
+      title: {
+        vi: "Cấu trúc thị trường",
+        en: "Market structure"
+      },
+      body: {
+        vi: "Quan sát đỉnh/đáy để xác định cấu trúc tăng, giảm, hoặc đi ngang. Không giao dịch khi cấu trúc chưa rõ.",
+        en: "Observe swing highs/lows to identify up, down, or sideways structure. Avoid trading when unclear."
+      },
+      checklist: [m("academy_structure_read", "Đã hiểu cấu trúc tăng/giảm/đi ngang", "I understand market structure")]
+    },
+    {
+      target: "#chartArea",
+      title: {
+        vi: "Hỗ trợ và kháng cự",
+        en: "Support and resistance"
+      },
+      body: {
+        vi: "Giá thường phản ứng tại các vùng từng đảo chiều. Dùng vùng này để đặt SL/TP hợp lý.",
+        en: "Price reacts around prior turning zones. Use them to place SL/TP logically."
+      },
+      checklist: [m("academy_sr_read", "Đã hiểu vùng hỗ trợ/kháng cự", "I understand support/resistance")]
+    },
+    {
+      target: "#chartArea",
+      title: {
+        vi: "Biến động và khối lượng",
+        en: "Volatility and volume"
+      },
+      body: {
+        vi: "Nến dài + khối lượng lớn là tín hiệu mạnh. Khi biến động cao, giảm đòn bẩy và khối lượng.",
+        en: "Large candles with high volume signal strength. In high volatility, reduce leverage and size."
+      },
+      checklist: [m("academy_vol_read", "Đã nắm nguyên tắc giảm rủi ro khi biến động cao", "I know to reduce risk in high volatility")]
+    },
+    {
+      target: ".time-btn.ind",
+      title: {
+        vi: "Bật chỉ báo cơ bản",
+        en: "Toggle basic indicators"
+      },
+      body: {
+        vi: "MA/EMA giúp bạn nhìn xu hướng mượt hơn. Hãy bật/tắt một chỉ báo bất kỳ.",
+        en: "MA/EMA helps smooth trend view. Toggle any indicator once."
+      },
+      checklist: [a("toggle_indicator", "Bật hoặc tắt một chỉ báo", "Toggle one indicator")]
+    },
+    {
+      target: ".time-btn.ind",
+      title: {
+        vi: "RSI, MACD, Bollinger",
+        en: "RSI, MACD, Bollinger"
+      },
+      body: {
+        vi: "RSI đo quá mua/quá bán, MACD đo động lượng, Bollinger đo độ lệch. Không dùng đơn lẻ, hãy kết hợp.",
+        en: "RSI shows overbought/oversold, MACD momentum, Bollinger deviation. Combine instead of relying on one."
+      },
+      checklist: [m("academy_indicators_read", "Đã hiểu vai trò của RSI/MACD/Bollinger", "I understand RSI/MACD/Bollinger roles")]
+    },
+    {
+      target: "#panelOrderbook",
+      title: {
+        vi: "Orderbook và độ sâu",
+        en: "Orderbook and depth"
+      },
+      body: {
+        vi: "Orderbook cho biết lực mua/bán hiện tại. Dùng để tránh vào lệnh khi thanh khoản mỏng.",
+        en: "Orderbook shows current buy/sell pressure. Avoid entries when liquidity is thin."
+      },
+      checklist: [a("open_orderbook", "Chạm vào khu vực Orderbook", "Tap the orderbook area")]
+    },
+    {
+      target: "#panelOrderbook",
+      title: {
+        vi: "Đồ thị độ sâu",
+        en: "Depth chart"
+      },
+      body: {
+        vi: "Đường mua/bán càng dốc càng mạnh. Nếu chênh lệch lớn, giá dễ giật mạnh.",
+        en: "Steeper buy/sell curves mean stronger pressure. Large gaps can cause sharp moves."
+      },
+      checklist: [m("academy_depth_read", "Đã hiểu đồ thị độ sâu", "I understand the depth chart")]
+    },
+    {
+      target: "#panelOrder",
+      title: {
+        vi: "Spot và Futures",
+        en: "Spot and Futures"
+      },
+      body: {
+        vi: "Spot là mua bán coin thật. Futures cho phép Long/Short và dùng đòn bẩy, rủi ro cao hơn.",
+        en: "Spot is buying real coins. Futures allows long/short and leverage, with higher risk."
+      },
+      checklist: [m("academy_spot_futures_read", "Đã phân biệt Spot và Futures", "I can distinguish spot vs futures")]
+    },
+    {
+      target: "#panelOrder",
+      title: {
+        vi: "Cross và Isolated Margin",
+        en: "Cross vs Isolated margin"
+      },
+      body: {
+        vi: "Cross dùng toàn bộ số dư làm ký quỹ, Isolated chỉ dùng phần bạn chọn. F0 nên ưu tiên Isolated.",
+        en: "Cross uses total balance, Isolated uses only selected margin. New users should prefer Isolated."
+      },
+      checklist: [m("academy_margin_read", "Đã hiểu Cross/Isolated", "I understand cross/isolated")]
+    },
+    {
+      target: "#leverageSlider",
+      title: {
+        vi: "Đòn bẩy hợp lý",
+        en: "Reasonable leverage"
+      },
+      body: {
+        vi: "Đòn bẩy càng cao, giá càng dễ chạm thanh lý. Hãy đặt đòn bẩy ở mức an toàn.",
+        en: "Higher leverage increases liquidation risk. Set a safer leverage level."
+      },
+      checklist: [a("set_leverage", "Điều chỉnh đòn bẩy một lần", "Adjust leverage once")]
+    },
+    {
+      target: "#btnLong",
+      title: {
+        vi: "Chọn chiều Long/Short",
+        en: "Choose Long or Short"
+      },
+      body: {
+        vi: "Long khi kỳ vọng tăng, Short khi kỳ vọng giảm. Hãy thử chuyển qua lại hai nút.",
+        en: "Long when expecting up, Short when expecting down. Toggle between both."
+      },
+      checklist: [a("choose_side", "Đổi chiều lệnh một lần", "Switch order side once")]
+    },
+    {
+      target: "#orderType",
+      title: {
+        vi: "Loại lệnh",
+        en: "Order type"
+      },
+      body: {
+        vi: "Market khớp ngay, Limit chờ giá. Hãy đổi loại lệnh để thấy khác biệt.",
+        en: "Market fills immediately, Limit waits at price. Switch order type once."
+      },
+      checklist: [a("order_type", "Đổi loại lệnh một lần", "Change order type once")]
+    },
+    {
+      target: "#orderQty",
+      title: {
+        vi: "Khối lượng lệnh",
+        en: "Order size"
+      },
+      body: {
+        vi: "Kích thước lệnh quyết định rủi ro. F0 nên bắt đầu nhỏ và tăng dần.",
+        en: "Order size defines risk. New users should start small and scale slowly."
+      },
+      checklist: [a("set_qty", "Nhập số lượng lệnh", "Enter an order quantity")]
+    },
+    {
+      target: "#orderPercent",
+      title: {
+        vi: "Phần trăm vốn",
+        en: "Capital percentage"
+      },
+      body: {
+        vi: "Kéo slider để chọn % vốn. Đây là cách kiểm soát rủi ro nhanh.",
+        en: "Use the slider to choose % capital. This is a fast risk control."
+      },
+      checklist: [a("set_percent", "Kéo slider % vốn", "Adjust the % capital slider")]
+    },
+    {
+      target: "#orderStop",
+      title: {
+        vi: "Stoploss",
+        en: "Stoploss"
+      },
+      body: {
+        vi: "Luôn đặt SL trước khi vào lệnh. SL giúp bạn giới hạn lỗ khi thị trường đi sai.",
+        en: "Always set SL before entering. SL limits losses when price goes against you."
+      },
+      tipKey: "sl-tp",
+      checklist: [a("set_sl", "Nhập giá Stoploss", "Enter a stoploss price")]
+    },
+    {
+      target: "#orderTake",
+      title: {
+        vi: "Take Profit",
+        en: "Take Profit"
+      },
+      body: {
+        vi: "TP giúp chốt lời đúng kế hoạch. Đừng để lãi biến thành lỗ.",
+        en: "TP locks profit per plan. Do not let profit turn into loss."
+      },
+      checklist: [a("set_tp", "Nhập giá Take Profit", "Enter a take profit price")]
+    },
+    {
+      target: "#orderTrail",
+      title: {
+        vi: "Trailing Stop",
+        en: "Trailing stop"
+      },
+      body: {
+        vi: "Trailing giúp kéo SL theo chiều có lợi. Không bắt buộc cho người mới.",
+        en: "Trailing moves SL in your favor. Optional for beginners."
+      },
+      checklist: [a("set_trail", "Nhập trailing (tùy chọn)", "Enter a trailing value (optional)", false)]
+    },
+    {
+      target: "#orderPreview",
+      title: {
+        vi: "Xem trước lệnh",
+        en: "Order preview"
+      },
+      body: {
+        vi: "Kiểm tra giá khớp, phí, margin và giá thanh lý trước khi gửi. Đây là bước bắt buộc.",
+        en: "Check fill price, fee, margin, and liquidation before sending. This is mandatory."
+      },
+      checklist: [a("order_preview", "Có dữ liệu xem trước", "Order preview shows data")]
+    },
+    {
+      target: "#orderNote",
+      title: {
+        vi: "Cảnh báo rủi ro",
+        en: "Risk warnings"
+      },
+      body: {
+        vi: "Nếu cảnh báo vốn quá lớn hoặc SL/TP thiếu, hãy giảm khối lượng hoặc thêm SL/TP.",
+        en: "If warned about size or missing SL/TP, reduce size or add SL/TP."
+      },
+      checklist: [m("academy_risk_read", "Đã đọc cảnh báo rủi ro", "I read the risk warning")]
+    },
+    {
+      target: "#submitOrder",
+      title: {
+        vi: "Gửi lệnh thử",
+        en: "Submit a practice order"
+      },
+      body: {
+        vi: "Gửi một lệnh nhỏ để trải nghiệm. Đây là bước chuyển từ lý thuyết sang thực hành.",
+        en: "Send a small order to practice. This moves from theory to action."
+      },
+      checklist: [a("place_order", "Gửi lệnh thành công", "Submit an order successfully")]
+    },
+    {
+      target: "#panelOrders",
+      title: {
+        vi: "Lệnh chờ",
+        en: "Open orders"
+      },
+      body: {
+        vi: "Lệnh chờ giúp bạn vào lệnh đúng giá. Hãy mở khu vực lệnh chờ để xem.",
+        en: "Open orders help enter at the right price. Open the pending orders section."
+      },
+      checklist: [a("open_orders_panel", "Mở khu vực lệnh chờ", "Open the pending orders panel")]
+    },
+    {
+      target: "#positionsList",
+      title: {
+        vi: "Vị thế đang chạy",
+        en: "Open positions"
+      },
+      body: {
+        vi: "Theo dõi PnL tại đây. Màu xanh là lời, màu đỏ là lỗ.",
+        en: "Track PnL here. Green is profit, red is loss."
+      },
+      checklist: [a("view_positions", "Xem danh sách vị thế", "View the positions list")]
+    },
+    {
+      target: "#positionsList",
+      title: {
+        vi: "Đóng vị thế",
+        en: "Close a position"
+      },
+      body: {
+        vi: "Biết chốt lệnh là kỹ năng quan trọng. Hãy đóng một vị thế khi cần.",
+        en: "Knowing when to close is key. Close a position when appropriate."
+      },
+      checklist: [a("close_order", "Đã đóng một vị thế", "Closed a position")]
+    },
+    {
+      target: "#positionsList",
+      title: {
+        vi: "Chấm điểm lệnh",
+        en: "Trade scoring"
+      },
+      body: {
+        vi: "Sau khi đóng lệnh, hệ thống sẽ chấm điểm dựa trên SL/TP, đòn bẩy và vốn. Hãy xem điểm số.",
+        en: "After closing, the system scores your trade based on SL/TP, leverage, and size. Review the score."
+      },
+      checklist: [a("trade_scored", "Đã nhận điểm lệnh", "Received a trade score")]
+    },
+    {
+      target: "#panelWallet",
+      title: {
+        vi: "Ví và tổng tài sản",
+        en: "Wallet and equity"
+      },
+      body: {
+        vi: "Tổng tài sản = tiền mặt + giá trị coin + PnL. Đây là con số bạn cần theo dõi mỗi ngày.",
+        en: "Equity = cash + coin value + PnL. Track this daily."
+      },
+      checklist: [a("open_wallet", "Mở khu vực ví", "Open the wallet panel")]
+    },
+    {
+      target: "#orderTemplates",
+      title: {
+        vi: "Mẫu lệnh 1-click",
+        en: "One-click templates"
+      },
+      body: {
+        vi: "Mẫu an toàn giúp bạn đặt lệnh nhanh với SL/TP chuẩn. Hãy thử một mẫu.",
+        en: "Safe templates place quick orders with SL/TP. Try one template."
+      },
+      checklist: [a("use_template", "Dùng một mẫu lệnh", "Use one order template")]
+    },
+    {
+      target: "#focusToggle",
+      title: {
+        vi: "Chế độ tập trung 1 coin",
+        en: "One-coin focus mode"
+      },
+      body: {
+        vi: "Ẩn bớt panel để tập trung đọc biểu đồ. Hữu ích khi bạn bị phân tán.",
+        en: "Hide panels to focus on the chart. Useful when distracted."
+      },
+      checklist: [a("focus_toggle", "Bật hoặc tắt focus mode", "Toggle focus mode")]
+    },
+    {
+      target: "#practiceBtn",
+      title: {
+        vi: "Luyện tập 3 phút",
+        en: "3-minute practice"
+      },
+      body: {
+        vi: "Hoàn thành đủ SL, TP và đặt lệnh trong 3 phút. Đây là bài tập kỹ năng cơ bản.",
+        en: "Complete SL, TP, and place an order within 3 minutes. This is a core skill drill."
+      },
+      practice: true,
+      checklist: [a("practice_done", "Hoàn thành luyện tập", "Finish the practice")]
+    },
+    {
+      target: "#tipChips",
+      title: {
+        vi: "Tip nhanh",
+        en: "Quick tips"
+      },
+      body: {
+        vi: "Xem một tip ngắn để củng cố kiến thức. Mỗi tip chỉ 10–15 giây.",
+        en: "Watch a short tip to reinforce knowledge. Each tip is 10–15 seconds."
+      },
+      tipKey: "risk",
+      checklist: [a("tip_view", "Mở một tip bất kỳ", "Open any tip")]
+    },
+    {
+      target: "#tipChips",
+      title: {
+        vi: "Mini quiz",
+        en: "Mini quiz"
+      },
+      body: {
+        vi: "Trả lời 2 câu hỏi để kiểm tra hiểu bài. Đúng sẽ được thưởng XP.",
+        en: "Answer 2 questions to verify understanding. Correct answers earn XP."
+      },
+      quizKey: "risk",
+      checklist: [a("quiz_done", "Hoàn thành một quiz", "Complete one quiz")]
+    },
+    {
+      target: "#dailyCheckinBtn",
+      title: {
+        vi: "Điểm danh hằng ngày",
+        en: "Daily check-in"
+      },
+      body: {
+        vi: "Điểm danh giúp duy trì thói quen học tập. Hãy nhận thưởng hôm nay.",
+        en: "Check-in builds learning habits. Claim today’s reward."
+      },
+      checklist: [a("daily_checkin", "Nhận thưởng điểm danh", "Claim daily check-in reward")]
+    },
+    {
+      target: "#predictUpBtn",
+      title: {
+        vi: "Dự đoán nến xanh/đỏ",
+        en: "Predict candle color"
+      },
+      body: {
+        vi: "Mini-game giúp luyện phản xạ. Hãy chọn xanh hoặc đỏ một lần.",
+        en: "This mini-game trains reflexes. Pick green or red once."
+      },
+      checklist: [a("predict_candle", "Đã dự đoán một lần", "Make one prediction")]
+    },
+    {
+      target: "#leaderboard",
+      title: {
+        vi: "Thành tựu và BXH",
+        en: "Achievements and leaderboard"
+      },
+      body: {
+        vi: "Theo dõi tiến bộ và so sánh thành tích. Mục tiêu là tiến bộ của chính bạn.",
+        en: "Track progress and compare results. The real goal is your own improvement."
+      },
+      checklist: [m("academy_leader_read", "Đã xem BXH và thành tựu", "I reviewed leaderboard and achievements")]
+    },
+    {
+      target: "#lessonHistory",
+      title: {
+        vi: "Lịch sử học tập",
+        en: "Lesson history"
+      },
+      body: {
+        vi: "Ghi lại các bước đã hoàn thành. Từ đây bạn có thể ôn lại bất cứ lúc nào.",
+        en: "Your completed steps are recorded here. You can review anytime."
+      },
+      checklist: [m("academy_history_read", "Đã xem lịch sử học tập", "I reviewed lesson history")]
+    },
+    {
+      target: "#newsTrack",
+      title: {
+        vi: "Tin tức thị trường",
+        en: "Market news"
+      },
+      body: {
+        vi: "Tin tức có thể tạo biến động lớn. Trước khi vào lệnh, hãy đọc tin chính.",
+        en: "News can cause big volatility. Read key headlines before trading."
+      },
+      checklist: [m("academy_news_read", "Đã xem thanh tin tức", "I checked the news ticker")]
+    },
+    {
+      target: "#mailBtn",
+      title: {
+        vi: "Hộp thư",
+        en: "Inbox"
+      },
+      body: {
+        vi: "Nhận thông báo, code và vật phẩm từ Admin. Hãy mở hộp thư một lần.",
+        en: "Receive notices, codes, and items from admin. Open the inbox once."
+      },
+      checklist: [a("open_mail", "Mở hộp thư", "Open the inbox")]
+    },
+    {
+      target: "#inventoryList",
+      title: {
+        vi: "Túi đồ và buff",
+        en: "Inventory and buffs"
+      },
+      body: {
+        vi: "Vật phẩm nhận được sẽ nằm ở đây. Buff có thời hạn hãy dùng đúng lúc.",
+        en: "Claimed items appear here. Timed buffs should be used wisely."
+      },
+      checklist: [m("academy_inventory_read", "Đã xem túi đồ/buff", "I reviewed inventory/buffs")]
+    },
+    {
+      target: "#panelOrder",
+      title: {
+        vi: "Cảnh báo rủi ro trước lệnh",
+        en: "Risk reminder before order"
+      },
+      body: {
+        vi: "Nếu lệnh quá lớn hoặc thiếu SL/TP, hãy giảm vốn. Không giao dịch khi cảm xúc cao.",
+        en: "If size is too big or missing SL/TP, reduce risk. Avoid trading on strong emotions."
+      },
+      checklist: [m("academy_risk_rule", "Đã hiểu nguyên tắc giảm rủi ro", "I understand risk reduction rule")]
+    },
+    {
+      target: "#panelOrder",
+      title: {
+        vi: "Kỷ luật và nghỉ ngơi",
+        en: "Discipline and rest"
+      },
+      body: {
+        vi: "Thua liên tục thì nghỉ 15 phút. Tâm lý ổn định quan trọng hơn việc gỡ lỗ.",
+        en: "If losing in a row, rest 15 minutes. Stable mindset beats revenge trading."
+      },
+      checklist: [m("academy_rest_rule", "Đã ghi nhớ quy tắc nghỉ khi thua", "I remember to rest after losses")]
+    },
+    {
+      target: "#focusToggle",
+      title: {
+        vi: "Tập trung và tối giản",
+        en: "Focus and simplify"
+      },
+      body: {
+        vi: "Khi mới học, chỉ nên theo dõi 1 coin để tránh nhiễu. Chất lượng quan trọng hơn số lượng.",
+        en: "As a beginner, focus on one coin to reduce noise. Quality over quantity."
+      },
+      checklist: [m("academy_focus_rule", "Đã hiểu nguyên tắc tập trung 1 coin", "I understand one-coin focus")]
+    },
+    {
+      target: "#orderStop",
+      title: {
+        vi: "Thiết lập lệnh an toàn",
+        en: "Set up a safe order"
+      },
+      body: {
+        vi: "Chuẩn bị một lệnh nhỏ: có SL, có TP, đòn bẩy vừa phải. Đây là chuẩn tối thiểu.",
+        en: "Prepare a small order with SL, TP, and moderate leverage. This is the minimum standard."
+      },
+      checklist: [
+        a("set_qty", "Đã có khối lượng lệnh", "Order size is set"),
+        a("set_sl", "Đã đặt Stoploss", "Stoploss is set"),
+        a("set_tp", "Đã đặt Take Profit", "Take Profit is set")
+      ]
+    },
+    {
+      target: "#submitOrder",
+      title: {
+        vi: "Thực hành lần cuối",
+        en: "Final practice"
+      },
+      body: {
+        vi: "Gửi lệnh đã chuẩn bị. Sau đó quan sát PnL và tuân thủ kế hoạch.",
+        en: "Submit the prepared order. Then observe PnL and follow the plan."
+      },
+      checklist: [a("place_order", "Gửi lệnh thành công", "Submit order successfully")]
+    },
+    {
+      target: "#positionsList",
+      title: {
+        vi: "Xem lại điểm lệnh",
+        en: "Review trade score"
+      },
+      body: {
+        vi: "Điểm lệnh phản ánh kỷ luật và quản trị rủi ro. Cố gắng duy trì điểm cao.",
+        en: "Trade score reflects discipline and risk control. Aim to keep it high."
+      },
+      checklist: [a("trade_scored", "Đã xem điểm lệnh", "Reviewed trade score")]
+    },
+    {
+      target: null,
+      title: {
+        vi: "Hoàn thành",
+        en: "Completed"
+      },
+      body: {
+        vi: "Bạn đã hoàn thành lộ trình 50 bước. Hãy luyện tập mỗi ngày với quy tắc an toàn.",
+        en: "You completed the 50-step path. Practice daily with safety rules."
+      },
+      checklist: [m("academy_finish", "Đã hoàn thành học viện", "Completed the academy")]
+    }
+  ];
+}
+const academyStepsV2 = buildAcademySteps();
+academySteps.length = 0;
+academySteps.push(...academyStepsV2);
+
 let academyState = {
   active: false,
   index: 0,
-  lang: "vi"
+  lang: state.academyLang || "vi"
 };
 
 function setAcademyVisible(show) {
@@ -1057,10 +1726,144 @@ function positionAcademyPanel(rect) {
   panel.style.left = `${left}px`;
 }
 
+function getAcademyChecklist(step) {
+  if (!step || !Array.isArray(step.checklist)) return [];
+  return step.checklist;
+}
+
+function isAcademyItemDone(item) {
+  if (!item || !item.id) return true;
+  if (item.manual) return !!state.academyManual?.[item.id];
+  return !!state.academyFlags?.[item.id];
+}
+
+function academyRequirementsMet(step) {
+  const items = getAcademyChecklist(step).filter((it) => it && it.required !== false);
+  if (!items.length) return true;
+  return items.every((item) => isAcademyItemDone(item));
+}
+
+function renderAcademyChecklist(step) {
+  if (!els.academyChecklist) return;
+  const items = getAcademyChecklist(step);
+  if (!items.length) {
+    els.academyChecklist.innerHTML = "";
+    return;
+  }
+  const lang = academyState.lang;
+  els.academyChecklist.innerHTML = items
+    .map((item) => {
+      const done = isAcademyItemDone(item);
+      const label = lang === "vi" ? item.vi : item.en;
+      const manual = item.manual ? "manual" : "";
+      return `
+        <div class="academy-check-item ${done ? "done" : ""} ${manual}" data-id="${item.id}" data-manual="${item.manual ? "1" : "0"}">
+          <span class="dot"></span>
+          <span>${label}</span>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function renderAcademyStatus(step) {
+  if (!els.academyStatus) return;
+  const items = getAcademyChecklist(step).filter((it) => it && it.required !== false);
+  if (!items.length) {
+    els.academyStatus.textContent = "";
+    return;
+  }
+  const done = items.filter((item) => isAcademyItemDone(item)).length;
+  const total = items.length;
+  const lang = academyState.lang;
+  if (done >= total) {
+    els.academyStatus.textContent = lang === "vi"
+      ? "Đã hoàn thành checklist. Bạn có thể tiếp tục."
+      : "Checklist completed. You can proceed.";
+  } else {
+    els.academyStatus.textContent = lang === "vi"
+      ? `Hoàn thành ${done}/${total} để tiếp tục.`
+      : `Complete ${done}/${total} to continue.`;
+  }
+}
+
+function renderAcademyTools(step) {
+  if (!els.academyTools) return;
+  const showTip = !!step?.tipKey;
+  const showQuiz = !!step?.quizKey;
+  const showPractice = !!step?.practice;
+  if (els.academyTip) els.academyTip.style.display = showTip ? "" : "none";
+  if (els.academyQuiz) els.academyQuiz.style.display = showQuiz ? "" : "none";
+  if (els.academyPractice) els.academyPractice.style.display = showPractice ? "" : "none";
+}
+
+function markAcademyFlag(flag) {
+  if (!flag) return;
+  if (!state.academyFlags) state.academyFlags = {};
+  if (state.academyFlags[flag]) return;
+  state.academyFlags[flag] = true;
+  saveLocal();
+  if (academyState.active) renderAcademyStep();
+}
+
+function toggleAcademyManual(flag) {
+  if (!flag) return;
+  if (!state.academyManual) state.academyManual = {};
+  state.academyManual[flag] = !state.academyManual[flag];
+  saveLocal();
+  if (academyState.active) renderAcademyStep();
+}
+
+function speakAcademyStep() {
+  const step = academySteps[academyState.index];
+  if (!step || !("speechSynthesis" in window)) {
+    showToast("Trình duyệt chưa hỗ trợ đọc văn bản.");
+    return;
+  }
+  const lang = academyState.lang;
+  const text = `${step.title[lang]}. ${step.body[lang]}`;
+  try {
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = lang === "vi" ? "vi-VN" : "en-US";
+    utter.rate = 1;
+    utter.pitch = 1;
+    window.speechSynthesis.speak(utter);
+  } catch {
+    showToast("Không thể phát giọng đọc.");
+  }
+}
+
+function initAcademyVisibilityObservers() {
+  if (!("IntersectionObserver" in window)) return;
+  const items = [
+    { selector: "#panelOrderbook", flag: "open_orderbook" },
+    { selector: "#panelOrders", flag: "open_orders_panel" },
+    { selector: "#panelWallet", flag: "open_wallet" },
+    { selector: "#positionsList", flag: "view_positions" }
+  ];
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      const flag = entry.target?.dataset?.academyFlag;
+      if (flag) markAcademyFlag(flag);
+    });
+  }, { threshold: 0.3 });
+  items.forEach(({ selector, flag }) => {
+    const el = document.querySelector(selector);
+    if (!el) return;
+    el.dataset.academyFlag = flag;
+    observer.observe(el);
+  });
+}
+
 function renderAcademyStep() {
   const step = academySteps[academyState.index];
   if (!step) return;
   const lang = academyState.lang;
+  renderAcademyChecklist(step);
+  renderAcademyStatus(step);
+  renderAcademyTools(step);
   if (els.academyStep) {
     els.academyStep.textContent = lang === "vi"
       ? `Bước ${academyState.index + 1}/${academySteps.length}`
@@ -1069,9 +1872,19 @@ function renderAcademyStep() {
   if (els.academyTitle) els.academyTitle.textContent = step.title[lang];
   if (els.academyText) els.academyText.textContent = step.body[lang];
   if (els.academyPrev) els.academyPrev.textContent = lang === "vi" ? "Quay lại" : "Back";
+  if (els.academySpeak) els.academySpeak.textContent = lang === "vi" ? "Đọc hướng dẫn" : "Speak";
+  if (els.academyTip) els.academyTip.textContent = lang === "vi" ? "Xem tip" : "Tip";
+  if (els.academyQuiz) els.academyQuiz.textContent = lang === "vi" ? "Làm quiz" : "Quiz";
+  if (els.academyPractice) els.academyPractice.textContent = lang === "vi" ? "Luyện tập" : "Practice";
+  if (els.academyLangToggle) els.academyLangToggle.textContent = "🇻🇳 TIẾNG VIỆT / 🇺🇸 ENGLISH";
+  const canProceed = academyRequirementsMet(step);
   if (els.academyNext) els.academyNext.textContent = academyState.index === academySteps.length - 1
-    ? (lang === "vi" ? "Bắt đầu" : "Start")
+    ? (lang === "vi" ? "Hoàn tất" : "Finish")
     : (lang === "vi" ? "Tiếp tục" : "Next");
+  if (els.academyNext) {
+    els.academyNext.disabled = !canProceed;
+    els.academyNext.classList.toggle("disabled", !canProceed);
+  }
   if (els.academyClose) els.academyClose.textContent = lang === "vi" ? "Thoát" : "Exit";
   if (els.academyProgressFill) {
     const progress = ((academyState.index + 1) / academySteps.length) * 100;
@@ -1111,6 +1924,13 @@ function closeAcademy() {
 }
 
 function nextAcademyStep() {
+  const current = academySteps[academyState.index];
+  if (current && !academyRequirementsMet(current)) {
+    showToast(academyState.lang === "vi"
+      ? "Hoàn thành checklist trước khi tiếp tục."
+      : "Complete the checklist before continuing.");
+    return;
+  }
   if (academyState.index >= academySteps.length - 1) {
     addLessonHistory("Academy A-Z");
     closeAcademy();
@@ -1755,6 +2575,13 @@ const els = {
   academyStep: document.getElementById("academyStep"),
   academyTitle: document.getElementById("academyTitle"),
   academyText: document.getElementById("academyText"),
+  academyChecklist: document.getElementById("academyChecklist"),
+  academyStatus: document.getElementById("academyStatus"),
+  academyTools: document.getElementById("academyTools"),
+  academySpeak: document.getElementById("academySpeak"),
+  academyTip: document.getElementById("academyTip"),
+  academyQuiz: document.getElementById("academyQuiz"),
+  academyPractice: document.getElementById("academyPractice"),
   academyProgressFill: document.getElementById("academyProgressFill"),
   academyPrev: document.getElementById("academyPrev"),
   academyNext: document.getElementById("academyNext"),
@@ -1776,6 +2603,9 @@ const els = {
   portfolioList: document.getElementById("portfolioList"),
   positionsList: document.getElementById("positionsList"),
   openOrders: document.getElementById("openOrders"),
+  chatMessages: document.getElementById("chatMessages"),
+  chatInput: document.getElementById("chatInput"),
+  chatSendBtn: document.getElementById("chatSendBtn"),
   tickerTrack: document.getElementById("tickerTrack"),
   newsTrack: document.getElementById("newsTrack"),
   themeToggle: document.getElementById("themeToggle"),
@@ -1806,6 +2636,8 @@ const els = {
   achievementList: document.getElementById("achievementList"),
   leaderboard: document.getElementById("leaderboard"),
   weeklyLeaderboard: document.getElementById("weeklyLeaderboard"),
+  richLeaderboard: document.getElementById("richLeaderboard"),
+  lbPrivacyBtn: document.getElementById("lbPrivacyBtn"),
   dailyTipCard: document.getElementById("dailyTipCard"),
   dailyTipText: document.getElementById("dailyTipText"),
   quickActions: document.getElementById("quickActions"),
@@ -1822,6 +2654,10 @@ const els = {
   practiceClose: document.getElementById("practiceClose"),
   orderTemplates: document.getElementById("orderTemplates"),
   focusToggle: document.getElementById("focusToggle"),
+  replayToggle: document.getElementById("replayToggle"),
+  replaySliderWrap: document.getElementById("replaySliderWrap"),
+  replayRange: document.getElementById("replayRange"),
+  replayLabel: document.getElementById("replayLabel"),
   lessonHistoryList: document.getElementById("lessonHistoryList"),
   sentimentValue: document.getElementById("sentimentValue"),
   sentimentFill: document.getElementById("sentimentFill"),
@@ -1981,6 +2817,8 @@ const els = {
   adminReadOnly: document.getElementById("adminReadOnly"),
   adminSlippage: document.getElementById("adminSlippage"),
   adminSetSlippage: document.getElementById("adminSetSlippage"),
+  adminMaxCandleBodyPct: document.getElementById("adminMaxCandleBodyPct"),
+  adminSetMaxCandleBodyPct: document.getElementById("adminSetMaxCandleBodyPct"),
   adminCancelPenalty: document.getElementById("adminCancelPenalty"),
   adminSetCancelPenalty: document.getElementById("adminSetCancelPenalty"),
   adminStrikeLimit: document.getElementById("adminStrikeLimit"),
@@ -2109,6 +2947,7 @@ const chartFrames = [null, null, null, null];
     zoom: 1,
     offset: 0,
     locked: false,
+    autoFollow: true,
     lastTotal: 0
   }));
   const tvViewportLocks = Array.from({ length: 4 }, () => false);
@@ -2556,6 +3395,7 @@ function applyAcceptedOrder(order, priceUsd) {
     }
   }
 
+  markAcademyFlag("place_order");
   markPracticeOrder();
   renderOpenOrders();
   updateBalances();
@@ -2657,6 +3497,37 @@ function initSocket() {
   socket.on("big_win", (payload) => {
     showBigWin(payload || {});
   });
+  socket.on("news_event", (payload) => {
+    if (!payload) return;
+    if (payload.type === "big_win") {
+      const name = payload.username || "Người chơi";
+      const symbol = payload.symbol || "";
+      const pnlUsd = Number(payload.pnlUsd) || 0;
+      const pct = Number(payload.pct) || 0;
+      const pctText = pct > 0 ? ` (${(pct * 100).toFixed(1)}%)` : "";
+      pushNews({ symbol, text: `Chúc mừng ${name} thắng ${formatUSD(pnlUsd)}${pctText}` });
+    }
+  });
+  socket.on("chat_history", (payload) => {
+    state.chatMessages = Array.isArray(payload?.items) ? payload.items : [];
+    renderChatMessages();
+  });
+  socket.on("chat_message", (payload) => {
+    pushChatMessage(payload);
+  });
+  socket.on("chat_error", (payload) => {
+    showToast(payload?.reason || "Không thể gửi chat.");
+  });
+  socket.on("leaderboard_update", (payload) => {
+    state.richLeaderboard = Array.isArray(payload?.rows) ? payload.rows : [];
+    if (payload?.selfPrivacy) state.leaderboardPrivacy = payload.selfPrivacy;
+    renderRichLeaderboard();
+    updateLeaderboardPrivacyUI();
+  });
+  socket.on("leaderboard_privacy", (payload) => {
+    if (payload?.value) state.leaderboardPrivacy = payload.value;
+    updateLeaderboardPrivacyUI();
+  });
   socket.on("spin_status", (payload) => {
     if (payload && typeof payload === "object") {
       spinState = { ...spinState, ...payload };
@@ -2708,6 +3579,8 @@ function initSocket() {
       }
     }
     setAuthState(payload?.username || "user");
+    requestRichLeaderboard();
+    socket.emit("chat_history_request");
     if (payload?.isAdmin) {
       adminState.authed = true;
       adminState.role = payload.adminRole || payload.role || "";
@@ -2724,6 +3597,8 @@ function initSocket() {
       storeAuth(payload.username, payload.refreshToken);
     }
     setAuthState(payload?.username || "user");
+    requestRichLeaderboard();
+    socket.emit("chat_history_request");
     if (payload?.isAdmin) {
       adminState.authed = true;
       adminState.role = payload.adminRole || payload.role || "";
@@ -2760,6 +3635,7 @@ function initSocket() {
     updatePendingBadge();
     showToast("Lệnh đã được khớp.");
     requestSpinStatus();
+    markAcademyFlag("place_order");
   });
   socket.on("order_filled", (payload) => {
     if (!payload) return;
@@ -2809,6 +3685,7 @@ function initSocket() {
     if (els.adminSafeMode) els.adminSafeMode.checked = !!payload?.safeMode;
     if (els.adminReadOnly) els.adminReadOnly.checked = !!payload?.adminReadOnly;
     if (els.adminSlippage) els.adminSlippage.value = payload?.slippagePct ?? "";
+    if (els.adminMaxCandleBodyPct) els.adminMaxCandleBodyPct.value = payload?.maxCandleBodyPct ?? "";
     if (els.adminCancelPenalty) els.adminCancelPenalty.value = payload?.cancelPenaltyRate ?? "";
     if (els.adminStrikeLimit) els.adminStrikeLimit.value = payload?.strikeLimit ?? "";
     if (els.adminAlertWebhook) els.adminAlertWebhook.value = payload?.alertWebhook ?? "";
@@ -3140,9 +4017,12 @@ function simulateOfflineProgress(timeDiffMs) {
     const drift = trend * 0.001 * safeMinutes;
     const diffusion = volatility * randomShock * Math.sqrt(safeMinutes) * 0.01;
     const totalChangePct = drift + diffusion;
+    const maxBodyPct = getMaxCandleBodyPct();
+    const maxChange = Number.isFinite(maxBodyPct) && maxBodyPct > 0 ? maxBodyPct / 100 : null;
+    const clampedChange = maxChange ? clamp(totalChangePct, -maxChange, maxChange) : totalChangePct;
 
     market.prev = market.price;
-    market.price = market.price * (1 + totalChangePct);
+    market.price = market.price * (1 + clampedChange);
     market.price = Math.max(0.000001, market.price);
 
     if (market.price > market.high) market.high = market.price;
@@ -3226,7 +4106,10 @@ function saveLocal() {
     chartPoints: state.chartPointsDesired || state.chartPoints,
     compactMode: !!state.compactMode,
     focusMode: !!state.focusMode,
-    tipAudioEnabled: !!state.tipAudioEnabled
+    tipAudioEnabled: !!state.tipAudioEnabled,
+    academyFlags: state.academyFlags,
+    academyManual: state.academyManual,
+    academyLang: academyState?.lang || state.academyLang
   };
 
   localStorage.setItem("cryptoGameSave_UI_v1", JSON.stringify(saveData));
@@ -3265,6 +4148,16 @@ function loadLocal() {
     if (typeof data.tipAudioEnabled === "boolean") {
       setTipAudioEnabled(data.tipAudioEnabled);
     }
+    if (data.academyFlags && typeof data.academyFlags === "object") {
+      state.academyFlags = data.academyFlags;
+    }
+    if (data.academyManual && typeof data.academyManual === "object") {
+      state.academyManual = data.academyManual;
+    }
+    if (typeof data.academyLang === "string") {
+      state.academyLang = data.academyLang;
+      if (academyState) academyState.lang = data.academyLang;
+    }
 
     return true;
   } catch (e) {
@@ -3287,6 +4180,7 @@ function setFocusMode(enabled) {
   if (els.focusToggle) {
     els.focusToggle.textContent = state.focusMode ? "Tat focus" : "Focus 1 coin";
   }
+  markAcademyFlag("focus_toggle");
   saveLocal();
 }
 
@@ -3560,6 +4454,90 @@ function renderWeeklyLeaderboard() {
   ].join("");
 }
 
+function updateLeaderboardPrivacyUI() {
+  if (!els.lbPrivacyBtn) return;
+  const value = state.leaderboardPrivacy === "anon" ? "Ẩn danh" : "Công khai";
+  els.lbPrivacyBtn.textContent = value;
+}
+
+function renderRichLeaderboard() {
+  if (!els.richLeaderboard) return;
+  if (!Array.isArray(state.richLeaderboard) || state.richLeaderboard.length === 0) {
+    els.richLeaderboard.innerHTML = `<div class="leader-row">Chưa có dữ liệu</div>`;
+    return;
+  }
+  els.richLeaderboard.innerHTML = state.richLeaderboard
+    .map((row) => {
+      return `
+        <div class="leader-row">
+          <div class="leader-rank">${row.rank || "-"}</div>
+          <div>
+            <div>${escapeHtml(row.name || "Ẩn danh")}</div>
+            <div class="leader-meta">${formatUSD(row.equityUsd || 0)} • ${formatVND(row.equityVnd || 0)}</div>
+          </div>
+          <div></div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function requestRichLeaderboard() {
+  if (!socket) return;
+  socket.emit("leaderboard_request");
+}
+
+function setLeaderboardPrivacy(value) {
+  state.leaderboardPrivacy = value === "anon" ? "anon" : "public";
+  updateLeaderboardPrivacyUI();
+  if (socket) socket.emit("set_leaderboard_privacy", { value: state.leaderboardPrivacy });
+}
+
+function renderChatMessages() {
+  if (!els.chatMessages) return;
+  const list = state.chatMessages || [];
+  if (list.length === 0) {
+    els.chatMessages.innerHTML = `<div class="chat-message"><div class="chat-user">Hệ thống</div><div>Chưa có tin nhắn.</div></div>`;
+    return;
+  }
+  els.chatMessages.innerHTML = list
+    .slice(-200)
+    .map((msg) => {
+      const user = escapeHtml(msg.user || "Ẩn danh");
+      const text = escapeHtml(msg.text || "");
+      const time = formatDateTime(msg.ts || Date.now());
+      const botClass = msg.bot ? " bot" : "";
+      const userClass = msg.bot ? "chat-user bot" : "chat-user";
+      return `
+        <div class="chat-message${botClass}">
+          <div class="${userClass}">${user}</div>
+          <div>${text}</div>
+          <div class="chat-time">${time}</div>
+        </div>
+      `;
+    })
+    .join("");
+  els.chatMessages.scrollTop = els.chatMessages.scrollHeight;
+}
+
+function pushChatMessage(msg) {
+  if (!msg) return;
+  state.chatMessages = Array.isArray(state.chatMessages) ? state.chatMessages : [];
+  state.chatMessages.push(msg);
+  if (state.chatMessages.length > 200) {
+    state.chatMessages = state.chatMessages.slice(-200);
+  }
+  renderChatMessages();
+}
+
+function sendChatMessage() {
+  if (!socket || !els.chatInput) return;
+  const text = (els.chatInput.value || "").trim();
+  if (!text) return;
+  socket.emit("chat_send", { text });
+  els.chatInput.value = "";
+}
+
 function renderLessonHistory() {
   if (!els.lessonHistoryList) return;
   if (!Array.isArray(state.lessonHistory) || state.lessonHistory.length === 0) {
@@ -3621,12 +4599,113 @@ const TIP_CHIPS = {
   }
 };
 
+const TIP_VIDEO_URL = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
+const TIP_POOL_OVERRIDE = [
+  "Luôn đặt stop-loss trước khi vào lệnh.",
+  "Không all-in khi thị trường biến động mạnh.",
+  "Hãy ưu tiên quản lý rủi ro hơn là lợi nhuận.",
+  "Đòn bẩy cao đi kèm rủi ro cao.",
+  "Chỉ vào lệnh khi có kế hoạch rõ ràng.",
+  "Giữ kỷ luật chốt lời theo mục tiêu.",
+  "Đừng FOMO khi giá đã chạy mạnh.",
+  "Tránh giao dịch khi tâm lý đang căng thẳng.",
+  "Kiểm tra khối lượng trước khi vào lệnh.",
+  "Ghi chú lại lệnh để rút kinh nghiệm."
+];
+const TIP_CHIPS_OVERRIDE = {
+  candle: {
+    title: "Nến là gì?",
+    text: "Đọc thân nến, râu nến và ý nghĩa của mỗi phần.",
+    duration: 12,
+    video: TIP_VIDEO_URL
+  },
+  trend: {
+    title: "Xác định xu hướng",
+    text: "Đỉnh sau cao hơn đỉnh trước thì xu hướng tăng.",
+    duration: 14,
+    video: TIP_VIDEO_URL
+  },
+  "sl-tp": {
+    title: "SL/TP cơ bản",
+    text: "Đặt SL 1-2%, TP 2-3% để bảo vệ tài khoản.",
+    duration: 10,
+    video: TIP_VIDEO_URL
+  },
+  risk: {
+    title: "Quản lý rủi ro",
+    text: "Không all-in, vào 10-20% vốn mỗi lệnh.",
+    duration: 15,
+    video: TIP_VIDEO_URL
+  }
+};
+const TIP_QUIZ_OVERRIDE = {
+  candle: [
+    {
+      q: "Thân nến thể hiện điều gì?",
+      options: ["Giá mở và đóng cửa", "Độ biến động giá", "Khối lượng", "Thông tin SL"],
+      correct: 0
+    },
+    {
+      q: "Râu nến dùng để nhận biết?",
+      options: ["Độ rung", "Điểm cao/thấp trong kỳ", "Phí giao dịch", "Lệnh chờ"],
+      correct: 1
+    }
+  ],
+  trend: [
+    {
+      q: "Đỉnh sau cao hơn đỉnh trước là xu hướng?",
+      options: ["Giảm", "Tăng", "Sideway", "Không rõ"],
+      correct: 1
+    },
+    {
+      q: "Trong xu hướng tăng, ưu tiên?",
+      options: ["Bán", "Mua", "All-in", "Bỏ qua SL"],
+      correct: 1
+    }
+  ],
+  "sl-tp": [
+    {
+      q: "SL dùng để?",
+      options: ["Nhầm lệnh", "Cắt lỗ", "Tăng đòn bẩy", "Giảm phí"],
+      correct: 1
+    },
+    {
+      q: "TP dùng để?",
+      options: ["Cắt lỗ", "Chốt lời", "Giảm rủi ro", "An toàn hơn"],
+      correct: 1
+    }
+  ],
+  risk: [
+    {
+      q: "Quản lý rủi ro đúng là?",
+      options: ["All-in", "Vào 10-20% vốn", "Không cần SL", "Tăng đòn bẩy max"],
+      correct: 1
+    },
+    {
+      q: "Nếu thua liên tục nên?",
+      options: ["Giao dịch tiếp", "Nghỉ và xem lại", "Tăng vốn", "Bỏ SL"],
+      correct: 1
+    }
+  ]
+};
 const TIP_MIN_SEC = 10;
 const TIP_MAX_SEC = 15;
 let tipTimerId = 0;
 let tipRemaining = 0;
 let tipOpen = false;
 let tipActiveKey = "";
+
+function getTipPoolSource() {
+  return TIP_POOL_OVERRIDE || tipPool;
+}
+
+function getTipChipsSource() {
+  return TIP_CHIPS_OVERRIDE || TIP_CHIPS;
+}
+
+function getTipQuizSource() {
+  return TIP_QUIZ_OVERRIDE || TIP_QUIZ;
+}
 
 const TIP_QUIZ_XP = 20;
 const TIP_QUIZ = {
@@ -3713,7 +4792,8 @@ function closeTipOverlay() {
 
 function openTipOverlay(key) {
   if (!els.tipOverlay) return;
-  let tip = TIP_CHIPS[key] || null;
+  const tipSource = getTipChipsSource();
+  let tip = tipSource[key] || null;
   if (!tip) {
     const chip = document.querySelector(`.tip-chip[data-tip="${key}"]`);
     if (chip) {
@@ -3734,6 +4814,7 @@ function openTipOverlay(key) {
   if (els.tipVideoWrap) {
     if (tip.video && els.tipVideo) {
       els.tipVideo.src = tip.video;
+      if (typeof els.tipVideo.load === "function") els.tipVideo.load();
       els.tipVideoWrap.classList.add("has-video");
       try {
         els.tipVideo.currentTime = 0;
@@ -3749,6 +4830,7 @@ function openTipOverlay(key) {
   requestAnimationFrame(() => els.tipOverlay.classList.add("show"));
   document.body.classList.add("tip-open");
   tipOpen = true;
+  markAcademyFlag("tip_view");
   if (state.tipAudioEnabled) playTipAudio();
   if (tipTimerId) clearInterval(tipTimerId);
   tipTimerId = setInterval(() => {
@@ -3796,10 +4878,12 @@ function markTipQuizDone(key) {
   } catch {
     // ignore
   }
+  markAcademyFlag("quiz_done");
 }
 
 function showTipQuizIfNeeded(key) {
-  if (!key || !TIP_QUIZ[key]) return;
+  const quizSource = getTipQuizSource();
+  if (!key || !quizSource[key]) return;
   if (isTipQuizDone(key)) return;
   quizState = { active: true, key, index: 0, correct: 0 };
   renderQuizQuestion();
@@ -3818,7 +4902,8 @@ function closeQuizOverlay() {
 
 function renderQuizQuestion() {
   if (!quizState.active) return;
-  const list = TIP_QUIZ[quizState.key] || [];
+  const quizSource = getTipQuizSource();
+  const list = quizSource[quizState.key] || [];
   const item = list[quizState.index];
   if (!item || !els.quizQuestion || !els.quizOptions) {
     closeQuizOverlay();
@@ -3834,7 +4919,8 @@ function renderQuizQuestion() {
 
 function handleQuizAnswer(idx) {
   if (!quizState.active) return;
-  const list = TIP_QUIZ[quizState.key] || [];
+  const quizSource = getTipQuizSource();
+  const list = quizSource[quizState.key] || [];
   const item = list[quizState.index];
   if (!item || !els.quizOptions) return;
   const buttons = Array.from(els.quizOptions.querySelectorAll("button"));
@@ -3851,11 +4937,12 @@ function handleQuizAnswer(idx) {
 
 function nextQuizStep() {
   if (!quizState.active) return;
-  const list = TIP_QUIZ[quizState.key] || [];
+  const quizSource = getTipQuizSource();
+  const list = quizSource[quizState.key] || [];
   if (quizState.index >= list.length - 1) {
     markTipQuizDone(quizState.key);
     if (quizState.correct >= list.length) addXp(TIP_QUIZ_XP);
-    showToast(`Quiz: ${quizState.correct}/${list.length} dung. +${quizState.correct >= list.length ? TIP_QUIZ_XP : 0} XP`);
+    showToast(`Quiz: ${quizState.correct}/${list.length} đúng. +${quizState.correct >= list.length ? TIP_QUIZ_XP : 0} XP`);
     closeQuizOverlay();
     return;
   }
@@ -3879,8 +4966,9 @@ function renderDailyTip() {
     // ignore
   }
   if (!selected) {
-    const idx = Math.abs(hashString(today)) % tipPool.length;
-    selected = tipPool[idx];
+    const pool = getTipPoolSource();
+    const idx = Math.abs(hashString(today)) % pool.length;
+    selected = pool[idx];
     try {
       localStorage.setItem(DAILY_TIP_KEY, JSON.stringify({ date: today, text: selected }));
     } catch {
@@ -3931,6 +5019,9 @@ function closePractice() {
     practiceTimerId = 0;
   }
   if (els.practiceOverlay) els.practiceOverlay.classList.add("hidden");
+  if (state.practice.sl && state.practice.tp && state.practice.order) {
+    markAcademyFlag("practice_done");
+  }
 }
 
 function markPracticeFromInputs() {
@@ -3940,12 +5031,18 @@ function markPracticeFromInputs() {
   if (stopInput > 0) state.practice.sl = true;
   if (takeInput > 0) state.practice.tp = true;
   updatePracticeUI();
+  if (state.practice.sl && state.practice.tp && state.practice.order) {
+    markAcademyFlag("practice_done");
+  }
 }
 
 function markPracticeOrder() {
   if (!state.practice.active) return;
   state.practice.order = true;
   updatePracticeUI();
+  if (state.practice.sl && state.practice.tp && state.practice.order) {
+    markAcademyFlag("practice_done");
+  }
 }
 
 function resolveOrderWarn(value) {
@@ -4378,6 +5475,7 @@ function toggleMailOverlay(show) {
     updateMailBadge();
     els.mailOverlay.classList.remove("hidden");
     requestAnimationFrame(() => els.mailOverlay.classList.add("show"));
+    markAcademyFlag("open_mail");
   } else {
     els.mailOverlay.classList.remove("show");
     setTimeout(() => els.mailOverlay.classList.add("hidden"), 200);
@@ -5457,6 +6555,7 @@ function updateOrderCalc() {
       ? (state.quote === "USD" ? formatUSD(liquidationUsd) : formatVND(toQuote(liquidationUsd)))
       : "-";
   }
+  markAcademyFlag("order_preview");
 
   const warnMessages = [];
   const overQty = qty > MAX_ORDER_QTY;
@@ -5473,6 +6572,10 @@ function updateOrderCalc() {
   if (overNotional) warnMessages.push("Notional vuot gioi han.");
   if (sizePct >= 0.3) {
     warnMessages.push(`Lenh chiem ~${Math.round(sizePct * 100)}% von. Goi y giam xuong 10-20%.`);
+  }
+  const slippageCap = Number(adminState.settings?.slippagePct);
+  if (slippageCap > 0 && Math.abs(slippagePct) > slippageCap) {
+    warnMessages.push(`Trượt giá vượt giới hạn ${slippageCap}%.`);
   }
   if (insufficientBalance && !(state.side === "sell" && leverage === 1)) {
     warnMessages.push("Số dư không đủ để đặt lệnh.");
@@ -5534,6 +6637,7 @@ function applyOrderPercent(rawValue) {
   const pct = Math.max(0, Math.min(100, Number(rawValue) || 0));
   els.orderPercent.value = pct.toString();
   if (els.orderPercentLabel) els.orderPercentLabel.textContent = `${pct}%`;
+  if (pct > 0) markAcademyFlag("set_percent");
 
   const leverage = Math.min(parseInt(els.orderLeverage.value, 10), getMaxLeverage());
   const priceInput = parseFloat(els.orderPrice.value || "0");
@@ -5604,6 +6708,11 @@ function applyOrderTemplate(kind) {
   applyOrderPercent(tpl.pct);
   updateOrderCalc();
   markPracticeFromInputs();
+  markAcademyFlag("use_template");
+  markAcademyFlag("set_sl");
+  markAcademyFlag("set_tp");
+  markAcademyFlag("set_percent");
+  markAcademyFlag("set_leverage");
   showToast("Đã áp dụng mẫu lệnh.");
 }
 
@@ -5616,6 +6725,12 @@ async function preOrderGuard() {
   const basePrice = type === "limit" ? fromQuote(priceInput) : state.market[state.selected]?.price;
   const priceUsd = type === "market" ? calcSlippage(basePrice, qty, state.side) : basePrice;
   if (!Number.isFinite(priceUsd) || priceUsd <= 0) return true;
+  const slippageCap = Number(adminState.settings?.slippagePct);
+  const slippagePct = basePrice > 0 ? Math.abs((priceUsd - basePrice) / basePrice) * 100 : 0;
+  if (slippageCap > 0 && slippagePct > slippageCap) {
+    showToast(`Trượt giá ${slippagePct.toFixed(2)}% vượt giới hạn ${slippageCap}%.`);
+    return false;
+  }
 
   const stopInput = parseFloat(els.orderStop?.value || "0");
   const takeInput = parseFloat(els.orderTake?.value || "0");
@@ -5702,7 +6817,13 @@ function updateIndicatorButtons() {
   const unlocked = new Set(state.career.unlocks);
   document.querySelectorAll(".time-btn.ind").forEach((btn) => {
     const key = btn.dataset.ind;
-    const isBase = key === "ma14" || key === "rsi" || key === "ema9" || key === "ema21" || key === "ma200";
+    const isBase = key === "ma14"
+      || key === "rsi"
+      || key === "ema9"
+      || key === "ema21"
+      || key === "ma200"
+      || key === "atr"
+      || key === "vp";
     const canUse = isBase || unlocked.has(key);
     btn.disabled = !canUse;
     btn.style.opacity = canUse ? "1" : "0.4";
@@ -5733,6 +6854,11 @@ function buildSlotSelects() {
       sel.addEventListener("change", () => {
         state.chartSlots[idx] = sel.value;
         resetChartViewport(idx, true);
+        if (state.replay?.active) {
+          const raw = getCandlesForSymbolRaw(sel.value);
+          state.replay.anchors[sel.value] = raw.length;
+          if (tvViewportLocks[idx] != null) tvViewportLocks[idx] = true;
+        }
         if (idx === 0) {
           selectCoin(sel.value);
         } else {
@@ -5915,6 +7041,7 @@ function evaluateTradeQuality(pnlUsd) {
   if (score >= 75) grade = "Tot";
   else if (score < 45) grade = "Can cai thien";
   showToast(`Đánh giá lệnh: ${grade} (${score}/100). ${reasons.join(", ")}.`);
+  markAcademyFlag("trade_scored");
 }
 
 function calcPositionPnl(pos, price) {
@@ -6828,6 +7955,49 @@ function calcBB(series, period, mult) {
   return { mid, upper, lower };
 }
 
+function calcATR(candles, period = 14) {
+  if (!Array.isArray(candles) || candles.length < period + 1) return [];
+  const atr = Array(candles.length).fill(null);
+  let sum = 0;
+  let prevAtr = null;
+  for (let i = 1; i < candles.length; i += 1) {
+    const high = candles[i].high;
+    const low = candles[i].low;
+    const prevClose = candles[i - 1].close;
+    const tr = Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
+    if (i <= period) {
+      sum += tr;
+      if (i === period) {
+        const first = sum / period;
+        atr[i] = first;
+        prevAtr = first;
+      }
+      continue;
+    }
+    if (prevAtr == null) prevAtr = tr;
+    const next = ((prevAtr * (period - 1)) + tr) / period;
+    atr[i] = next;
+    prevAtr = next;
+  }
+  return atr;
+}
+
+function calcVolumeProfile(candles, bins = 24) {
+  if (!Array.isArray(candles) || candles.length === 0) return null;
+  const min = Math.min(...candles.map((c) => c.low));
+  const max = Math.max(...candles.map((c) => c.high));
+  const range = max - min || 1;
+  const size = range / bins;
+  const buckets = Array.from({ length: bins }, () => 0);
+  candles.forEach((c) => {
+    const price = c.close;
+    const idx = clamp(Math.floor((price - min) / size), 0, bins - 1);
+    const weight = Math.max(0.2, Math.abs(c.close - c.open));
+    buckets[idx] += weight;
+  });
+  return { min, max, range, size, buckets };
+}
+
 /* function buildCandles(series, target = 40) {
   if (!series || series.length === 0) return [];
 
@@ -6962,7 +8132,23 @@ function buildCandlesFromSeries(series, target = 40) {
   return candles;
 }
 
-function getCandlesForSymbol(symbol) {
+function getReplaySlice(symbol, candles) {
+  const replay = state.replay;
+  if (!replay || !replay.active || !Array.isArray(candles)) return candles;
+  if (!symbol) return candles;
+  const maxOffset = Number.isFinite(replay.max) ? replay.max : 5;
+  const offset = clamp(Math.round(replay.offset || 0), 0, maxOffset);
+  const anchors = replay.anchors || {};
+  if (!Number.isFinite(anchors[symbol]) || anchors[symbol] <= 0) {
+    anchors[symbol] = candles.length;
+    replay.anchors = anchors;
+  }
+  const anchorLen = Math.max(1, Math.min(anchors[symbol] || candles.length, candles.length));
+  const end = Math.max(1, Math.min(anchorLen - offset, candles.length));
+  return candles.slice(0, end);
+}
+
+function getCandlesForSymbolRaw(symbol) {
   const history = candleHistory.get(symbol) || [];
   const current = candleCurrent.get(symbol);
   let candles = history.slice();
@@ -6986,6 +8172,10 @@ function getCandlesForSymbol(symbol) {
     .filter((c) => Number.isFinite(c.open) && Number.isFinite(c.close));
 }
 
+function getCandlesForSymbol(symbol) {
+  return getReplaySlice(symbol, getCandlesForSymbolRaw(symbol));
+}
+
 function getChartViewport(slotIndex) {
   const idx = Math.max(0, Math.min(chartViewports.length - 1, Number(slotIndex) || 0));
   return chartViewports[idx];
@@ -6995,6 +8185,67 @@ function getVisibleCount(total, zoom) {
   const maxVisible = Math.min(CHART_MAX_VISIBLE, Math.max(CHART_MIN_VISIBLE, total));
   const raw = Math.round((state.chartPoints || 120) / zoom);
   return Math.max(CHART_MIN_VISIBLE, Math.min(maxVisible, raw));
+}
+
+function updateReplayUI() {
+  const active = !!state.replay?.active;
+  if (els.replayToggle) {
+    els.replayToggle.classList.toggle("active", active);
+    els.replayToggle.textContent = active ? "Replay: Đang bật" : "Replay 5 phút";
+  }
+  if (els.replaySliderWrap) {
+    els.replaySliderWrap.classList.toggle("hidden", !active);
+  }
+  if (els.replayRange) {
+    els.replayRange.max = String(state.replay?.max ?? 5);
+    els.replayRange.value = String(state.replay?.offset ?? 0);
+  }
+  if (els.replayLabel) {
+    els.replayLabel.textContent = `-${state.replay?.offset ?? 0}m`;
+  }
+}
+
+function setReplayActive(enabled) {
+  const next = !!enabled;
+  state.replay.active = next;
+  state.replay.offset = 0;
+  state.replay.anchors = {};
+  if (next) {
+    const slots = Array.isArray(state.chartSlots) ? state.chartSlots : [];
+    slots.forEach((sym) => {
+      if (!sym) return;
+      const raw = getCandlesForSymbolRaw(sym);
+      state.replay.anchors[sym] = raw.length;
+    });
+    chartViewports.forEach((viewport) => {
+      viewport.autoFollow = false;
+      viewport.locked = true;
+      viewport.lastTotal = viewport.lastTotal || 0;
+    });
+    tvViewportLocks.forEach((_, idx) => {
+      tvViewportLocks[idx] = true;
+    });
+  } else {
+    chartViewports.forEach((viewport) => {
+      viewport.autoFollow = true;
+      viewport.locked = false;
+      viewport.lastTotal = 0;
+    });
+    tvViewportLocks.forEach((_, idx) => {
+      tvViewportLocks[idx] = false;
+    });
+  }
+  updateReplayUI();
+  renderAllTvSlots();
+  scheduleChartDraw();
+}
+
+function setReplayOffset(value) {
+  const maxOffset = Number.isFinite(state.replay.max) ? state.replay.max : 5;
+  state.replay.offset = clamp(Math.round(Number(value) || 0), 0, maxOffset);
+  updateReplayUI();
+  renderAllTvSlots();
+  scheduleChartDraw();
 }
 
   function sliceCandlesForViewport(allCandles, slotIndex) {
@@ -7009,11 +8260,12 @@ function getVisibleCount(total, zoom) {
   }
     const viewport = getChartViewport(slotIndex);
     viewport.zoom = clamp(Number(viewport.zoom) || 1, CHART_ZOOM_MIN, CHART_ZOOM_MAX);
+    if (viewport.autoFollow == null) viewport.autoFollow = true;
     const visible = getVisibleCount(total, viewport.zoom);
     const maxOffset = Math.max(0, total - visible);
     const prevTotal = Number(viewport.lastTotal) || total;
     viewport.offset = clamp(Math.round(Number(viewport.offset) || 0), 0, maxOffset);
-    if (viewport.locked && total > prevTotal) {
+    if (!viewport.autoFollow && total > prevTotal) {
       viewport.offset = clamp(viewport.offset + (total - prevTotal), 0, maxOffset);
     }
     const leftIndex = total - visible - viewport.offset;
@@ -7111,9 +8363,11 @@ function drawChartFor(canvas, symbol, lowerEnabled, slotIndex = 0) {
   const frame = buildChartFrame(canvas, symbol, lowerEnabled, slotIndex);
   if (!frame) return null;
 
-  const { candles, closes, padding, priceToY, candleGap, candleWidth, bb, lowerHeight, lowerTop, priceHeight } = frame;
+  const { candles, closes, padding, w, priceToY, candleGap, candleWidth, bb, lowerHeight, lowerTop, priceHeight } = frame;
   const rsiEnabled = state.indicators.rsi;
   const macdEnabled = state.indicators.macd;
+  const atrEnabled = state.indicators.atr;
+  const vpEnabled = state.indicators.vp;
   const last = candles[candles.length - 1];
 
   ctx.save();
@@ -7141,6 +8395,29 @@ function drawChartFor(canvas, symbol, lowerEnabled, slotIndex = 0) {
     ctx.fillStyle = bodyColor;
     ctx.fillRect(x - candleWidth / 2, bodyTop, candleWidth, bodyHeight);
   });
+
+  if (vpEnabled) {
+    const vp = calcVolumeProfile(candles, 24);
+    if (vp && vp.buckets.length) {
+      const maxBucket = Math.max(...vp.buckets) || 1;
+      const vpWidth = Math.min(52, w * 0.14);
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      vp.buckets.forEach((value, idx) => {
+        if (value <= 0) return;
+        const priceTop = vp.min + (idx + 1) * vp.size;
+        const priceBottom = vp.min + idx * vp.size;
+        const yTop = priceToY(priceTop);
+        const yBottom = priceToY(priceBottom);
+        const barH = Math.max(1, yBottom - yTop);
+        const barW = (value / maxBucket) * vpWidth;
+        const x = padding + w - barW;
+        ctx.fillStyle = "rgba(120, 200, 255, 0.25)";
+        ctx.fillRect(x, yTop, barW, barH);
+      });
+      ctx.restore();
+    }
+  }
 
   if (last) {
     const lastX = padding + (candles.length - 1) * candleGap;
@@ -7315,6 +8592,27 @@ function drawChartFor(canvas, symbol, lowerEnabled, slotIndex = 0) {
     }
   }
 
+  if (atrEnabled) {
+    const atr = calcATR(candles, 14);
+    const values = atr.filter((v) => typeof v === "number");
+    if (values.length > 0) {
+      const minAtr = Math.min(...values);
+      const maxAtr = Math.max(...values);
+      const atrRange = maxAtr - minAtr || 1;
+      ctx.beginPath();
+      atr.forEach((value, idx) => {
+        if (value == null) return;
+        const x = padding + idx * candleGap;
+        const y = lowerTop + lowerHeight - ((value - minAtr) / atrRange) * lowerHeight;
+        if (idx === 0 || atr[idx - 1] == null) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = "rgba(120, 200, 255, 0.85)";
+      ctx.lineWidth = 1.1;
+      ctx.stroke();
+    }
+  }
+
   return frame;
 }
 
@@ -7385,7 +8683,7 @@ function resizeTvCharts() {
   });
 }
 
-function getCandleData(symbol) {
+function getCandleDataRaw(symbol) {
   const history = candleHistory.get(symbol) || [];
   const current = candleCurrent.get(symbol);
   const data = history.slice();
@@ -7394,6 +8692,10 @@ function getCandleData(symbol) {
     else data[data.length - 1] = current;
   }
   return data;
+}
+
+function getCandleData(symbol) {
+  return getReplaySlice(symbol, getCandleDataRaw(symbol));
 }
 
 function buildPlaceholderCandles(symbol) {
@@ -7488,6 +8790,7 @@ function markChartInteraction(duration = 220) {
     viewport.offset = 0;
     if (!keepZoom) viewport.zoom = 1;
     viewport.locked = false;
+    viewport.autoFollow = true;
     viewport.lastTotal = 0;
     if (tvViewportLocks[slotIndex] != null) tvViewportLocks[slotIndex] = false;
     if (chartFrames[slotIndex]) chartFrames[slotIndex] = null;
@@ -7515,8 +8818,14 @@ function markChartInteraction(duration = 220) {
     const oldOffset = clamp(Number(viewport.offset) || 0, 0, Math.max(0, total - visibleBefore));
     const leftBefore = total - visibleBefore - oldOffset;
     let anchorIndex = leftBefore + (visibleBefore - 1) * 0.5;
-    if (rect && rect.width > 0) {
-      const lowerEnabled = state.indicators.rsi || state.indicators.macd;
+    if (
+      state.crosshair.active
+      && state.crosshair.slot === slotIndex
+      && Number.isFinite(state.crosshair.idx)
+    ) {
+      anchorIndex = leftBefore + state.crosshair.idx;
+    } else if (rect && rect.width > 0) {
+      const lowerEnabled = state.indicators.rsi || state.indicators.macd || state.indicators.atr;
       const frame = buildChartFrame(baseCanvas, symbol, lowerEnabled, slotIndex);
       if (frame && frame.candleGap) {
         const localX = clientX - rect.left;
@@ -7534,6 +8843,7 @@ function markChartInteraction(duration = 220) {
     const leftAfter = Math.round(anchorIndex - ((anchorIndex - leftBefore) / Math.max(1, visibleBefore - 1)) * (visibleAfter - 1));
     viewport.offset = clamp(total - visibleAfter - leftAfter, 0, maxOffsetAfter);
     viewport.locked = true;
+    viewport.autoFollow = false;
     viewport.lastTotal = total;
     chartFrames[slotIndex] = null;
   }
@@ -7622,6 +8932,7 @@ function queueChartZoom(slotIndex, clientX, deltaY) {
     chartPanState.startOffset = Number(viewport.offset) || 0;
     chartPanState.pointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
     viewport.locked = true;
+    viewport.autoFollow = false;
     viewport.lastTotal = allCandles.length;
     return true;
   }
@@ -7643,7 +8954,7 @@ function moveChartPan(event) {
   }
   if (!chartPanState.active) return false;
   const baseCanvas = els.chartCanvases[slot] || els.chartFxCanvases[slot];
-  const lowerEnabled = state.indicators.rsi || state.indicators.macd;
+  const lowerEnabled = state.indicators.rsi || state.indicators.macd || state.indicators.atr;
   let frame = chartFrames[slot];
   if (!frame || frame.symbol !== symbol || frame.lowerEnabled !== lowerEnabled) {
     frame = buildChartFrame(baseCanvas, symbol, lowerEnabled, slot);
@@ -7723,7 +9034,7 @@ function updateChartCrosshair(event) {
   if (!symbol) return;
   const canvas = els.chartCanvases[slot] || els.chartFxCanvases[slot];
   if (!canvas) return;
-  const lowerEnabled = state.indicators.rsi || state.indicators.macd;
+  const lowerEnabled = state.indicators.rsi || state.indicators.macd || state.indicators.atr;
   let frame = chartFrames[slot];
   if (!frame || frame.symbol !== symbol || frame.lowerEnabled !== lowerEnabled) {
     frame = buildChartFrame(canvas, symbol, lowerEnabled, slot);
@@ -7824,7 +9135,7 @@ function drawCharts() {
     tile.style.display = idx < layout ? "block" : "none";
   });
   updateChartLabels();
-  const lowerEnabled = state.indicators.rsi || state.indicators.macd;
+  const lowerEnabled = state.indicators.rsi || state.indicators.macd || state.indicators.atr;
   for (let i = 0; i < layout; i += 1) {
     const canvas = els.chartCanvases[i];
     const bgCanvas = els.chartBgCanvases[i];
@@ -8058,7 +9369,7 @@ function spawnOrderSplash(symbol, side, price) {
   if (!ORDER_SPLASH_ENABLED) return;
   const slot = state.chartSlots.findIndex((s, idx) => idx < state.chartLayout && s === symbol);
   if (slot === -1) return;
-  const lowerEnabled = state.indicators.rsi || state.indicators.macd;
+  const lowerEnabled = state.indicators.rsi || state.indicators.macd || state.indicators.atr;
   let frame = chartFrames[slot];
   if (!frame || frame.symbol !== symbol || frame.lowerEnabled !== lowerEnabled) {
     const baseCanvas = els.chartCanvases[slot] || els.chartFxCanvases[slot];
@@ -8222,7 +9533,7 @@ function drawFxFor(canvas, frame, time, slotIndex) {
 
 function drawFx(time) {
   const layout = state.chartLayout;
-  const lowerEnabled = state.indicators.rsi || state.indicators.macd;
+  const lowerEnabled = state.indicators.rsi || state.indicators.macd || state.indicators.atr;
   for (let i = 0; i < layout; i += 1) {
     const fxCanvas = els.chartFxCanvases[i];
     const symbol = state.chartSlots[i];
@@ -8509,6 +9820,7 @@ function closePosition(id) {
       leverage: pos.leverage,
       qty: pos.qty
     });
+    markAcademyFlag("close_order");
     return;
   }
   const idx = state.positions.findIndex((pos) => pos.id === id);
@@ -8528,6 +9840,7 @@ function closePosition(id) {
   updateBalances();
   updatePortfolio();
   showToast("Đã đóng vị thế.");
+  markAcademyFlag("close_order");
 }
 
 function removeProtectionsFor(symbol, side, leverage) {
@@ -8851,6 +10164,20 @@ function bindEvents() {
       els.quickLetters.classList.toggle("hidden");
     });
   }
+  if (els.chatSendBtn) {
+    els.chatSendBtn.addEventListener("click", sendChatMessage);
+  }
+  if (els.chatInput) {
+    els.chatInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") sendChatMessage();
+    });
+  }
+  if (els.lbPrivacyBtn) {
+    els.lbPrivacyBtn.addEventListener("click", () => {
+      const next = state.leaderboardPrivacy === "anon" ? "public" : "anon";
+      setLeaderboardPrivacy(next);
+    });
+  }
   if (els.practiceBtn) {
     els.practiceBtn.addEventListener("click", openPractice);
   }
@@ -8864,6 +10191,12 @@ function bindEvents() {
   }
   if (els.focusToggle) {
     els.focusToggle.addEventListener("click", () => setFocusMode(!state.focusMode));
+  }
+  if (els.replayToggle) {
+    els.replayToggle.addEventListener("click", () => setReplayActive(!state.replay.active));
+  }
+  if (els.replayRange) {
+    els.replayRange.addEventListener("input", () => setReplayOffset(els.replayRange.value));
   }
   if (els.orderTemplates) {
     els.orderTemplates.addEventListener("click", (e) => {
@@ -9004,6 +10337,11 @@ function bindEvents() {
       target.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   }
+  if (els.tickerTrack) {
+    els.tickerTrack.addEventListener("click", () => {
+      markAcademyFlag("view_ticker");
+    });
+  }
   if (els.chartArea) {
     els.chartArea.addEventListener("pointerdown", (e) => {
       const started = startChartPan(e);
@@ -9019,6 +10357,7 @@ function bindEvents() {
         }
       }
       updateChartCrosshair(e);
+      markAcademyFlag("view_chart");
     });
     els.chartArea.addEventListener("pointermove", (e) => {
       if (moveChartPan(e)) return;
@@ -9041,6 +10380,7 @@ function bindEvents() {
         updateChartCrosshair(e);
         queueChartZoom(slot, e.clientX, deltaY);
       }
+      markAcademyFlag("view_chart");
       if (e.cancelable) e.preventDefault();
     }, { passive: false });
     els.chartArea.addEventListener("dblclick", (e) => {
@@ -9166,6 +10506,36 @@ function bindEvents() {
         closeAcademy();
       });
     }
+    if (els.academyChecklist) {
+      els.academyChecklist.addEventListener("click", (e) => {
+        const item = e.target.closest(".academy-check-item");
+        if (!item) return;
+        if (item.dataset.manual !== "1") return;
+        toggleAcademyManual(item.dataset.id);
+      });
+    }
+    if (els.academySpeak) {
+      els.academySpeak.addEventListener("click", () => {
+        speakAcademyStep();
+      });
+    }
+    if (els.academyTip) {
+      els.academyTip.addEventListener("click", () => {
+        const step = academySteps[academyState.index];
+        if (step?.tipKey) openTipOverlay(step.tipKey);
+      });
+    }
+    if (els.academyQuiz) {
+      els.academyQuiz.addEventListener("click", () => {
+        const step = academySteps[academyState.index];
+        if (step?.quizKey) showTipQuizIfNeeded(step.quizKey);
+      });
+    }
+    if (els.academyPractice) {
+      els.academyPractice.addEventListener("click", () => {
+        openPractice();
+      });
+    }
     if (els.academyRestart) {
       els.academyRestart.addEventListener("click", () => {
         academyState.index = 0;
@@ -9179,6 +10549,8 @@ function bindEvents() {
     if (els.academyLangToggle) {
       els.academyLangToggle.addEventListener("click", () => {
         academyState.lang = academyState.lang === "vi" ? "en" : "vi";
+        state.academyLang = academyState.lang;
+        saveLocal();
         renderAcademyStep();
       });
     }
@@ -9687,6 +11059,17 @@ function bindEvents() {
         return;
       }
       sendAdminAction("SET_SLIPPAGE", { slippagePct: pct });
+    });
+  }
+  if (els.adminSetMaxCandleBodyPct) {
+    els.adminSetMaxCandleBodyPct.addEventListener("click", () => {
+      if (!adminState.authed) return;
+      const pct = parseFloat(els.adminMaxCandleBodyPct?.value || "");
+      if (!Number.isFinite(pct) || pct <= 0) {
+        showToast("Nhập % thân nến hợp lệ.");
+        return;
+      }
+      sendAdminAction("SET_MAX_CANDLE_BODY", { maxCandleBodyPct: pct });
     });
   }
   if (els.adminSetCancelPenalty) {
@@ -10310,6 +11693,7 @@ function bindEvents() {
       document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active", "buy", "sell"));
       tab.classList.add("active", tab.dataset.side);
       state.side = tab.dataset.side;
+      markAcademyFlag("choose_side");
       if (els.orderPercent && Number(els.orderPercent.value) > 0) {
         applyOrderPercent(els.orderPercent.value);
       }
@@ -10324,6 +11708,7 @@ function bindEvents() {
         state.indicators[key] = !state.indicators[key];
         btn.classList.toggle("active", state.indicators[key]);
         drawChart();
+        markAcademyFlag("toggle_indicator");
         return;
       }
       document.querySelectorAll(".time-btn").forEach((b) => {
@@ -10334,6 +11719,7 @@ function bindEvents() {
       state.chartPointsDesired = map[btn.dataset.tf];
       applyPerfChartPoints();
       scheduleChartDraw();
+      markAcademyFlag("change_timeframe");
     });
   });
 
@@ -10347,6 +11733,7 @@ function bindEvents() {
   els.orderType.addEventListener("change", () => {
     els.orderPrice.disabled = els.orderType.value === "market";
     updateOrderInputs();
+    markAcademyFlag("order_type");
     if (els.orderPercent && Number(els.orderPercent.value) > 0) {
       applyOrderPercent(els.orderPercent.value);
     }
@@ -10356,6 +11743,7 @@ function bindEvents() {
     state.leverage = parseInt(els.orderLeverage.value, 10);
     updateLeverageOptions();
     updateOrderCalc();
+    markAcademyFlag("set_leverage");
     if (els.orderPercent && Number(els.orderPercent.value) > 0) {
       applyOrderPercent(els.orderPercent.value);
     }
@@ -10367,22 +11755,36 @@ function bindEvents() {
       applyOrderPercent(els.orderPercent.value);
     }
   });
-  els.orderQty.addEventListener("input", updateOrderCalc);
+  els.orderQty.addEventListener("input", () => {
+    updateOrderCalc();
+    if (parseFloat(els.orderQty.value || "0") > 0) markAcademyFlag("set_qty");
+  });
   if (els.orderQtyUp) {
-    els.orderQtyUp.addEventListener("click", () => stepOrderQty(1));
+    els.orderQtyUp.addEventListener("click", () => {
+      stepOrderQty(1);
+      if (parseFloat(els.orderQty.value || "0") > 0) markAcademyFlag("set_qty");
+    });
   }
   if (els.orderQtyDown) {
-    els.orderQtyDown.addEventListener("click", () => stepOrderQty(-1));
+    els.orderQtyDown.addEventListener("click", () => {
+      stepOrderQty(-1);
+      if (parseFloat(els.orderQty.value || "0") > 0) markAcademyFlag("set_qty");
+    });
   }
   els.orderStop.addEventListener("input", () => {
     updateOrderCalc();
     markPracticeFromInputs();
+    if (parseFloat(els.orderStop.value || "0") > 0) markAcademyFlag("set_sl");
   });
   els.orderTake.addEventListener("input", () => {
     updateOrderCalc();
     markPracticeFromInputs();
+    if (parseFloat(els.orderTake.value || "0") > 0) markAcademyFlag("set_tp");
   });
-  els.orderTrail.addEventListener("input", updateOrderCalc);
+  els.orderTrail.addEventListener("input", () => {
+    updateOrderCalc();
+    if (parseFloat(els.orderTrail.value || "0") > 0) markAcademyFlag("set_trail");
+  });
   els.submitOrder.addEventListener("click", placeOrder);
   if (els.orderPercent) {
     els.orderPercent.addEventListener("input", () => {
@@ -10513,12 +11915,17 @@ function init() {
   initChartSlots();
   initLightweightCharts();
   buildSlotSelects();
+  updateReplayUI();
   buildAdminCoinSelect();
   bindEvents();
+  initAcademyVisibilityObservers();
   setupCollapsiblePanels();
   renderAchievements();
   renderLeaderboard();
   renderWeeklyLeaderboard();
+  updateLeaderboardPrivacyUI();
+  renderRichLeaderboard();
+  renderChatMessages();
   renderDailyTip();
   renderBullBearPoll();
   renderBoosters();
