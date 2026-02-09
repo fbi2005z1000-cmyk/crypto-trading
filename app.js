@@ -1637,7 +1637,8 @@ function buildAcademySteps() {
     }
   ];
 }
-const academyStepsV2 = buildAcademySteps();
+const academyStepsV2 = buildAcademySteps()
+  .filter((step) => !step || step.target !== "#panelOrderbook");
 academySteps.length = 0;
 academySteps.push(...academyStepsV2);
 
@@ -1837,7 +1838,6 @@ function speakAcademyStep() {
 function initAcademyVisibilityObservers() {
   if (!("IntersectionObserver" in window)) return;
   const items = [
-    { selector: "#panelOrderbook", flag: "open_orderbook" },
     { selector: "#panelOrders", flag: "open_orders_panel" },
     { selector: "#panelWallet", flag: "open_wallet" },
     { selector: "#positionsList", flag: "view_positions" }
@@ -2600,6 +2600,10 @@ const els = {
   adminModalOk: document.getElementById("adminModalOk"),
   usdBalance: document.getElementById("usdBalance"),
   vndBalance: document.getElementById("vndBalance"),
+  miniUsdBalance: document.getElementById("miniUsdBalance"),
+  miniVndBalance: document.getElementById("miniVndBalance"),
+  miniPortfolioList: document.getElementById("miniPortfolioList"),
+  orderMiniWallet: document.getElementById("orderMiniWallet"),
   portfolioList: document.getElementById("portfolioList"),
   positionsList: document.getElementById("positionsList"),
   openOrders: document.getElementById("openOrders"),
@@ -6129,6 +6133,8 @@ function updateBalances() {
   const prevVnd = balanceCache.vnd ?? state.vnd;
   animateNumber(els.usdBalance, prevUsd, state.usd, formatUSD);
   animateNumber(els.vndBalance, prevVnd, state.vnd, formatVND, 520);
+  if (els.miniUsdBalance) animateNumber(els.miniUsdBalance, prevUsd, state.usd, formatUSD);
+  if (els.miniVndBalance) animateNumber(els.miniVndBalance, prevVnd, state.vnd, formatVND, 520);
   balanceCache.usd = state.usd;
   balanceCache.vnd = state.vnd;
   updateUserRank();
@@ -6138,10 +6144,13 @@ function updatePortfolio() {
   const entries = Object.entries(state.holdings)
     .filter(([, qty]) => qty > 0.0000001)
     .map(([symbol, qty]) => {
-      const price = state.market[symbol].price;
+      const price = state.market?.[symbol]?.price;
+      if (!Number.isFinite(price)) return null;
       return { symbol, qty, valueUsd: price * qty };
     })
+    .filter(Boolean)
     .sort((a, b) => b.valueUsd - a.valueUsd);
+  updateMiniPortfolio(entries);
 
   if (entries.length === 0) {
     els.portfolioList.innerHTML = `<div class="portfolio-row">Chưa có tài sản</div>`;
@@ -6160,6 +6169,26 @@ function updatePortfolio() {
           <div class="portfolio-coin">${iconHtml}<span>${entry.symbol}</span></div>
           <div>${entry.qty.toFixed(6)}</div>
           <div>${formatUSD(entry.valueUsd)} | ${formatVND(valueVnd)}</div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function updateMiniPortfolio(entries) {
+  if (!els.miniPortfolioList) return;
+  if (!entries || entries.length === 0) {
+    els.miniPortfolioList.innerHTML = `<div class="mini-asset">Chưa có tài sản</div>`;
+    return;
+  }
+  const miniEntries = entries.slice(0, 3);
+  els.miniPortfolioList.innerHTML = miniEntries
+    .map((entry) => {
+      const valueVnd = entry.valueUsd * FX_RATE;
+      return `
+        <div class="mini-asset">
+          <span>${entry.symbol}</span>
+          <span>${formatUSD(entry.valueUsd)} | ${formatVND(valueVnd)}</span>
         </div>
       `;
     })
@@ -6340,6 +6369,7 @@ function drawDepthToCanvas(canvas, asks, bids, strong = false) {
 }
 
 function drawDepthChart(asks, bids) {
+  if (document.body.classList.contains("no-orderbook")) return;
   if (!els.depthChart) return;
   if (!depthCtx) resizeDepthCanvas();
   drawDepthToCanvas(els.depthChart, asks, bids, false);
@@ -6411,6 +6441,8 @@ function getDepthBook(symbol) {
 }
 
 function buildOrderBook() {
+  if (document.body.classList.contains("no-orderbook")) return;
+  if (!els.asks || !els.bids) return;
   const { asks, bids } = getDepthBook(state.selected);
 
   const maxAsk = Math.max(...asks.map((a) => a.amount));
@@ -11868,6 +11900,41 @@ function bindEvents() {
   }
 }
 
+function ensureMiniWallet() {
+  if (document.getElementById("orderMiniWallet")) return;
+  if (!els.orderPanel) return;
+  const wrap = document.createElement("div");
+  wrap.className = "order-mini-wallet";
+  wrap.id = "orderMiniWallet";
+  wrap.innerHTML = `
+    <div class="mini-head">
+      <div class="mini-title">Ví & Tài sản</div>
+      <div class="mini-sub">Tóm tắt nhanh số dư</div>
+    </div>
+    <div class="mini-balance-grid">
+      <div class="mini-balance-card">
+        <div class="mini-label">USD</div>
+        <div class="mini-value" id="miniUsdBalance">0</div>
+      </div>
+      <div class="mini-balance-card">
+        <div class="mini-label">VND</div>
+        <div class="mini-value" id="miniVndBalance">0</div>
+      </div>
+    </div>
+    <div class="mini-portfolio" id="miniPortfolioList"></div>
+  `;
+  const insertBefore = els.orderPanel.querySelector(".order-templates") || els.orderPanel.querySelector(".form-grid");
+  if (insertBefore && insertBefore.parentNode) {
+    insertBefore.parentNode.insertBefore(wrap, insertBefore);
+  } else {
+    els.orderPanel.appendChild(wrap);
+  }
+  els.orderMiniWallet = wrap;
+  els.miniUsdBalance = document.getElementById("miniUsdBalance");
+  els.miniVndBalance = document.getElementById("miniVndBalance");
+  els.miniPortfolioList = document.getElementById("miniPortfolioList");
+}
+
 function init() {
   const savedTheme = localStorage.getItem("tradingGameTheme");
   if (savedTheme) {
@@ -11876,6 +11943,8 @@ function init() {
   if (els.themeToggle) {
     els.themeToggle.textContent = document.body.dataset.theme === "light" ? "Chế độ tối" : "Chế độ sáng";
   }
+  document.body.classList.add("no-orderbook");
+  ensureMiniWallet();
   ensurePrimaryAriaLabels();
   if (!orderNoteDefault && els.orderNote) {
     orderNoteDefault = els.orderNote.textContent || "";
