@@ -257,9 +257,10 @@ const state = {
   botLastRun: 0,
   sentimentHistory: [],
   achievements: new Set(),
+  lessonHistory: [],
   recentPnl: [],
   lossStreak: 0,
-  risk: { maxLeverage: null, limitUntil: 0, cooldownUntil: 0 },
+  risk: { maxLeverage: null, limitUntil: 0, cooldownUntil: 0, restUntil: 0 },
   marketRegime: { mode: "sideway", until: 0 },
   depthBooks: {},
   chartPoints: 120,
@@ -273,6 +274,10 @@ const state = {
   muteUntil: 0,
   perfMode: false,
   compactMode: false,
+  focusMode: false,
+  tipAudioEnabled: true,
+  practice: { active: false, remaining: 0, sl: false, tp: false, order: false },
+  lastOrderMeta: { hasSLTP: false, leverage: 1, qty: 0, notional: 0 },
   crosshair: { active: false, slot: -1, x: 0, y: 0, price: 0, candle: null }
 };
 
@@ -281,14 +286,24 @@ let adminUsers = [];
 let adminLogRaw = [];
 let orderNoteDefault = "";
 let adminModalState = { resolve: null };
+let orderWarnState = { resolve: null };
+let restTimerId = 0;
 let mailReadMap = {};
 let todayAssist = { viewChart: false, demoOrder: false, sampleSLTP: false };
+let assistTimerId = 0;
+let assistRemaining = 0;
 const AUTH_USER_KEY = "cta_auth_user";
 const AUTH_REFRESH_KEY = "cta_auth_refresh";
 const AUTH_REMEMBER_KEY = "cta_auth_remember";
 const ONBOARDING_KEY = "cta_onboarding_v1";
 const MAIL_READ_KEY = "cta_mail_read_v1";
 const TODAY_ASSIST_KEY_PREFIX = "cta_today_assist_";
+const LESSON_HISTORY_KEY = "cta_lesson_history_v1";
+const TIP_AUDIO_KEY = "cta_tip_audio_v1";
+const TIP_QUIZ_KEY_PREFIX = "cta_tip_quiz_";
+const FOCUS_MODE_KEY = "cta_focus_mode_v1";
+const PRACTICE_DURATION_SEC = 180;
+const REST_SUGGEST_MS = 15 * 60 * 1000;
 const MOBILE_BREAKPOINT = 900;
 const CHART_MIN_VISIBLE = 20;
 const CHART_MAX_VISIBLE = 600;
@@ -1091,6 +1106,7 @@ function closeAcademy() {
 
 function nextAcademyStep() {
   if (academyState.index >= academySteps.length - 1) {
+    addLessonHistory("Academy A-Z");
     closeAcademy();
     return;
   }
@@ -1758,6 +1774,7 @@ const els = {
   compactToggle: document.getElementById("compactToggle"),
   todayAssist: document.getElementById("todayAssist"),
   assistDone: document.getElementById("assistDone"),
+  assistTimer: document.getElementById("assistTimer"),
   assistViewChart: document.getElementById("assistViewChart"),
   assistDemoOrder: document.getElementById("assistDemoOrder"),
   assistSampleSLTP: document.getElementById("assistSampleSLTP"),
@@ -1788,6 +1805,16 @@ const els = {
   quickBuyBtn: document.getElementById("quickBuyBtn"),
   quickSellBtn: document.getElementById("quickSellBtn"),
   quickCancelBtn: document.getElementById("quickCancelBtn"),
+  practiceBtn: document.getElementById("practiceBtn"),
+  practiceOverlay: document.getElementById("practiceOverlay"),
+  practiceTimer: document.getElementById("practiceTimer"),
+  practiceSL: document.getElementById("practiceSL"),
+  practiceTP: document.getElementById("practiceTP"),
+  practiceOrder: document.getElementById("practiceOrder"),
+  practiceClose: document.getElementById("practiceClose"),
+  orderTemplates: document.getElementById("orderTemplates"),
+  focusToggle: document.getElementById("focusToggle"),
+  lessonHistoryList: document.getElementById("lessonHistoryList"),
   sentimentValue: document.getElementById("sentimentValue"),
   sentimentFill: document.getElementById("sentimentFill"),
   botList: document.getElementById("botList"),
@@ -1834,6 +1861,33 @@ const els = {
   mailList: document.getElementById("mailList"),
   inventoryList: document.getElementById("inventoryList"),
   activeBuffList: document.getElementById("activeBuffList"),
+  tipChips: Array.from(document.querySelectorAll(".tip-chip")),
+  tipOverlay: document.getElementById("tipOverlay"),
+  tipTitle: document.getElementById("tipTitle"),
+  tipSub: document.getElementById("tipSub"),
+  tipText: document.getElementById("tipText"),
+  tipTimer: document.getElementById("tipTimer"),
+  tipAudioBtn: document.getElementById("tipAudioBtn"),
+  tipClose: document.getElementById("tipClose"),
+  tipVideo: document.getElementById("tipVideo"),
+  tipVideoWrap: document.getElementById("tipVideoWrap"),
+  tipFallback: document.getElementById("tipFallback"),
+  quizOverlay: document.getElementById("quizOverlay"),
+  quizTitle: document.getElementById("quizTitle"),
+  quizSub: document.getElementById("quizSub"),
+  quizQuestion: document.getElementById("quizQuestion"),
+  quizOptions: document.getElementById("quizOptions"),
+  quizSkip: document.getElementById("quizSkip"),
+  quizNext: document.getElementById("quizNext"),
+  orderWarnOverlay: document.getElementById("orderWarnOverlay"),
+  orderWarnTitle: document.getElementById("orderWarnTitle"),
+  orderWarnText: document.getElementById("orderWarnText"),
+  orderWarnPrimary: document.getElementById("orderWarnPrimary"),
+  orderWarnSecondary: document.getElementById("orderWarnSecondary"),
+  restOverlay: document.getElementById("restOverlay"),
+  restSub: document.getElementById("restSub"),
+  restTimer: document.getElementById("restTimer"),
+  restClose: document.getElementById("restClose"),
   broadcastOverlay: document.getElementById("broadcastOverlay"),
   broadcastMessage: document.getElementById("broadcastMessage"),
   broadcastTimer: document.getElementById("broadcastTimer"),
@@ -2488,6 +2542,7 @@ function applyAcceptedOrder(order, priceUsd) {
     }
   }
 
+  markPracticeOrder();
   renderOpenOrders();
   updateBalances();
   updatePortfolio();
@@ -3142,6 +3197,7 @@ function saveLocal() {
     lastLogin: Date.now(),
     career: state.career,
     achievements: [...state.achievements],
+    lessonHistory: state.lessonHistory,
     leaderboard: state.leaderboard,
     boosters: state.boosters,
     theme: document.body.dataset.theme,
@@ -3150,7 +3206,9 @@ function saveLocal() {
     risk: state.risk,
     marketRegime: state.marketRegime,
     chartPoints: state.chartPoints,
-    compactMode: !!state.compactMode
+    compactMode: !!state.compactMode,
+    focusMode: !!state.focusMode,
+    tipAudioEnabled: !!state.tipAudioEnabled
   };
 
   localStorage.setItem("cryptoGameSave_UI_v1", JSON.stringify(saveData));
@@ -3170,6 +3228,7 @@ function loadLocal() {
     if (data.chartPoints) state.chartPoints = data.chartPoints;
 
     if (data.achievements) state.achievements = new Set(data.achievements);
+    if (Array.isArray(data.lessonHistory)) state.lessonHistory = data.lessonHistory;
     if (data.favorites) state.favorites = new Set(data.favorites);
     if (data.leaderboard) state.leaderboard = data.leaderboard;
     if (data.theme) {
@@ -3178,6 +3237,12 @@ function loadLocal() {
     }
     if (typeof data.compactMode === "boolean") {
       setCompactMode(data.compactMode);
+    }
+    if (typeof data.focusMode === "boolean") {
+      setFocusMode(data.focusMode);
+    }
+    if (typeof data.tipAudioEnabled === "boolean") {
+      setTipAudioEnabled(data.tipAudioEnabled);
     }
 
     return true;
@@ -3193,6 +3258,15 @@ function setCompactMode(enabled) {
   if (els.compactToggle) {
     els.compactToggle.textContent = state.compactMode ? "Giao diện đầy đủ" : "Gọn giao diện";
   }
+}
+
+function setFocusMode(enabled) {
+  state.focusMode = !!enabled;
+  document.body.classList.toggle("focus-one", state.focusMode);
+  if (els.focusToggle) {
+    els.focusToggle.textContent = state.focusMode ? "Tat focus" : "Focus 1 coin";
+  }
+  saveLocal();
 }
 
 function getTodayAssistKey() {
@@ -3237,6 +3311,27 @@ function renderTodayAssist() {
   if (els.assistDone) els.assistDone.textContent = `${doneCount}/3`;
 }
 
+function updateAssistTimer() {
+  if (!els.assistTimer) return;
+  const value = assistRemaining > 0 ? `${assistRemaining}s` : "30s";
+  els.assistTimer.textContent = value;
+}
+
+function startAssistTimer() {
+  assistRemaining = 30;
+  updateAssistTimer();
+  if (assistTimerId) clearInterval(assistTimerId);
+  assistTimerId = setInterval(() => {
+    assistRemaining -= 1;
+    if (assistRemaining <= 0) {
+      assistRemaining = 0;
+      clearInterval(assistTimerId);
+      assistTimerId = 0;
+    }
+    updateAssistTimer();
+  }, 1000);
+}
+
 function markTodayAssist(key) {
   if (!key || typeof todayAssist[key] === "undefined") return;
   if (!todayAssist[key]) {
@@ -3247,6 +3342,7 @@ function markTodayAssist(key) {
 }
 
 function runAssistViewChart() {
+  startAssistTimer();
   const chartPanel = document.getElementById("panelChart");
   if (chartPanel && chartPanel.scrollIntoView) {
     chartPanel.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -3255,6 +3351,7 @@ function runAssistViewChart() {
 }
 
 function runAssistDemoOrder() {
+  startAssistTimer();
   const btnLong = document.getElementById("btnLong");
   if (btnLong) btnLong.click();
   if (els.orderType) {
@@ -3272,6 +3369,7 @@ function runAssistDemoOrder() {
 }
 
 function runAssistSampleSLTP() {
+  startAssistTimer();
   const basePrice = state.market[state.selected]?.price;
   if (!Number.isFinite(basePrice) || basePrice <= 0) {
     showToast("Chưa có giá để đặt SL/TP.");
@@ -3441,6 +3539,31 @@ function renderWeeklyLeaderboard() {
   ].join("");
 }
 
+function renderLessonHistory() {
+  if (!els.lessonHistoryList) return;
+  if (!Array.isArray(state.lessonHistory) || state.lessonHistory.length === 0) {
+    els.lessonHistoryList.innerHTML = "<div class=\"lesson-item\">Chua co bai hoc</div>";
+    return;
+  }
+  els.lessonHistoryList.innerHTML = state.lessonHistory
+    .slice(0, 8)
+    .map((row) => `<div class="lesson-item"><span>${row.title}</span><span>${row.date}</span></div>`)
+    .join("");
+}
+
+function addLessonHistory(title) {
+  const entry = {
+    title: title || "Academy",
+    date: getDateKey(),
+    ts: Date.now()
+  };
+  if (!Array.isArray(state.lessonHistory)) state.lessonHistory = [];
+  state.lessonHistory.unshift(entry);
+  if (state.lessonHistory.length > 20) state.lessonHistory.length = 20;
+  renderLessonHistory();
+  saveLocal();
+}
+
 const tipPool = [
   "Luôn đặt stop‑loss trước khi vào lệnh.",
   "Không all‑in khi thị trường biến động mạnh.",
@@ -3453,6 +3576,271 @@ const tipPool = [
   "Kiểm tra khối lượng trước khi vào lệnh.",
   "Ghi chú lại lệnh để rút kinh nghiệm."
 ];
+
+const TIP_CHIPS = {
+  candle: {
+    title: "Nen la gi?",
+    text: "Doc than nen, rau nen va y nghia cua moi phan.",
+    duration: 12
+  },
+  trend: {
+    title: "Xac dinh xu huong",
+    text: "Dinh sau cao hon dinh truoc thi xu huong tang.",
+    duration: 14
+  },
+  "sl-tp": {
+    title: "SL/TP co ban",
+    text: "Dat SL 1-2%, TP 2-3% de bao ve tai khoan.",
+    duration: 10
+  },
+  risk: {
+    title: "Quan ly rui ro",
+    text: "Khong all-in, vao 10-20% von moi lenh.",
+    duration: 15
+  }
+};
+
+const TIP_MIN_SEC = 10;
+const TIP_MAX_SEC = 15;
+let tipTimerId = 0;
+let tipRemaining = 0;
+let tipOpen = false;
+let tipActiveKey = "";
+
+const TIP_QUIZ_XP = 20;
+const TIP_QUIZ = {
+  candle: [
+    {
+      q: "Than nen the hien dieu gi?",
+      options: ["Gia mo dong cua", "Do bien dong gia", "Khoi luong", "Thong tin SL"],
+      correct: 1
+    },
+    {
+      q: "Rau nen dung de nhan biet?",
+      options: ["Do rung", "Diem cao/thap trong ky", "Phi giao dich", "Lenh cho"],
+      correct: 1
+    }
+  ],
+  trend: [
+    {
+      q: "Dinh sau cao hon dinh truoc la xu huong?",
+      options: ["Giam", "Tang", "Sideway", "Khong ro"],
+      correct: 1
+    },
+    {
+      q: "Trong xu huong tang, uu tien?",
+      options: ["Ban", "Mua", "All-in", "Bo qua SL"],
+      correct: 1
+    }
+  ],
+  "sl-tp": [
+    {
+      q: "SL dung de?",
+      options: ["Nham loi", "Cat lo", "Tang don bay", "Giam phi"],
+      correct: 1
+    },
+    {
+      q: "TP dung de?",
+      options: ["Cat lo", "Chot loi", "Giam rui ro", "An toan hon"],
+      correct: 1
+    }
+  ],
+  risk: [
+    {
+      q: "Quan ly rui ro dung la?",
+      options: ["All-in", "Vao 10-20% von", "Khong can SL", "Tang don bay max"],
+      correct: 1
+    },
+    {
+      q: "Neu thua lien tuc nen?",
+      options: ["Giao dich tiep", "Nghi va xem lai", "Tang von", "Bo SL"],
+      correct: 1
+    }
+  ]
+};
+
+let quizState = { active: false, key: "", index: 0, correct: 0 };
+
+function updateTipTimerUI() {
+  if (els.tipTimer) els.tipTimer.textContent = `${tipRemaining}s`;
+  if (els.tipSub) els.tipSub.textContent = `${tipRemaining}s`;
+}
+
+function closeTipOverlay() {
+  if (!els.tipOverlay) return;
+  tipOpen = false;
+  tipActiveKey = "";
+  if (tipTimerId) {
+    clearInterval(tipTimerId);
+    tipTimerId = 0;
+  }
+  if (els.tipVideo) {
+    try {
+      els.tipVideo.pause();
+    } catch {
+      // ignore
+    }
+    els.tipVideo.removeAttribute("src");
+    if (typeof els.tipVideo.load === "function") els.tipVideo.load();
+  }
+  els.tipOverlay.classList.remove("show");
+  setTimeout(() => {
+    els.tipOverlay.classList.add("hidden");
+  }, 200);
+  document.body.classList.remove("tip-open");
+}
+
+function openTipOverlay(key) {
+  if (!els.tipOverlay) return;
+  let tip = TIP_CHIPS[key] || null;
+  if (!tip) {
+    const chip = document.querySelector(`.tip-chip[data-tip="${key}"]`);
+    if (chip) {
+      tip = {
+        title: chip.dataset.title || chip.textContent || "Video tip",
+        text: chip.dataset.text || "",
+        duration: Number(chip.dataset.duration) || 12,
+        video: chip.dataset.video || ""
+      };
+    }
+  }
+  if (!tip) return;
+  tipActiveKey = key;
+  tipRemaining = clamp(Math.round(tip.duration || 12), TIP_MIN_SEC, TIP_MAX_SEC);
+  if (els.tipTitle) els.tipTitle.textContent = tip.title || "Video tip";
+  if (els.tipText) els.tipText.textContent = tip.text || "";
+  updateTipTimerUI();
+  if (els.tipVideoWrap) {
+    if (tip.video && els.tipVideo) {
+      els.tipVideo.src = tip.video;
+      els.tipVideoWrap.classList.add("has-video");
+      try {
+        els.tipVideo.currentTime = 0;
+        els.tipVideo.play().catch(() => {});
+      } catch {
+        // ignore
+      }
+    } else {
+      els.tipVideoWrap.classList.remove("has-video");
+    }
+  }
+  els.tipOverlay.classList.remove("hidden");
+  requestAnimationFrame(() => els.tipOverlay.classList.add("show"));
+  document.body.classList.add("tip-open");
+  tipOpen = true;
+  if (state.tipAudioEnabled) playTipAudio();
+  if (tipTimerId) clearInterval(tipTimerId);
+  tipTimerId = setInterval(() => {
+    tipRemaining -= 1;
+    if (tipRemaining <= 0) {
+      tipRemaining = 0;
+      updateTipTimerUI();
+      closeTipOverlay();
+      showTipQuizIfNeeded(key);
+      return;
+    }
+    updateTipTimerUI();
+  }, 1000);
+}
+
+function setTipAudioEnabled(enabled) {
+  state.tipAudioEnabled = !!enabled;
+  if (els.tipAudioBtn) {
+    els.tipAudioBtn.textContent = state.tipAudioEnabled ? "Audio: On" : "Audio: Off";
+    els.tipAudioBtn.classList.toggle("off", !state.tipAudioEnabled);
+  }
+  saveLocal();
+}
+
+function playTipAudio() {
+  playTone({ type: "sine", freq: 620, duration: 0.08, volume: 0.08 });
+  setTimeout(() => playTone({ type: "sine", freq: 740, duration: 0.08, volume: 0.08 }), 120);
+}
+
+function getTipQuizKey(key) {
+  return `${TIP_QUIZ_KEY_PREFIX}${getDateKey()}_${key}`;
+}
+
+function isTipQuizDone(key) {
+  try {
+    return localStorage.getItem(getTipQuizKey(key)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markTipQuizDone(key) {
+  try {
+    localStorage.setItem(getTipQuizKey(key), "1");
+  } catch {
+    // ignore
+  }
+}
+
+function showTipQuizIfNeeded(key) {
+  if (!key || !TIP_QUIZ[key]) return;
+  if (isTipQuizDone(key)) return;
+  quizState = { active: true, key, index: 0, correct: 0 };
+  renderQuizQuestion();
+  if (els.quizOverlay) {
+    els.quizOverlay.classList.remove("hidden");
+    requestAnimationFrame(() => els.quizOverlay.classList.add("show"));
+  }
+}
+
+function closeQuizOverlay() {
+  quizState.active = false;
+  if (!els.quizOverlay) return;
+  els.quizOverlay.classList.remove("show");
+  setTimeout(() => els.quizOverlay.classList.add("hidden"), 200);
+}
+
+function renderQuizQuestion() {
+  if (!quizState.active) return;
+  const list = TIP_QUIZ[quizState.key] || [];
+  const item = list[quizState.index];
+  if (!item || !els.quizQuestion || !els.quizOptions) {
+    closeQuizOverlay();
+    return;
+  }
+  if (els.quizTitle) els.quizTitle.textContent = "Mini quiz";
+  if (els.quizSub) els.quizSub.textContent = `Cau ${quizState.index + 1}/${list.length}`;
+  els.quizQuestion.textContent = item.q;
+  els.quizOptions.innerHTML = item.options
+    .map((opt, idx) => `<button type="button" data-idx="${idx}">${opt}</button>`)
+    .join("");
+}
+
+function handleQuizAnswer(idx) {
+  if (!quizState.active) return;
+  const list = TIP_QUIZ[quizState.key] || [];
+  const item = list[quizState.index];
+  if (!item || !els.quizOptions) return;
+  const buttons = Array.from(els.quizOptions.querySelectorAll("button"));
+  buttons.forEach((btn) => btn.setAttribute("disabled", "true"));
+  const correct = item.correct;
+  if (idx === correct) {
+    quizState.correct += 1;
+    buttons[idx]?.classList.add("correct");
+  } else {
+    buttons[idx]?.classList.add("wrong");
+    buttons[correct]?.classList.add("correct");
+  }
+}
+
+function nextQuizStep() {
+  if (!quizState.active) return;
+  const list = TIP_QUIZ[quizState.key] || [];
+  if (quizState.index >= list.length - 1) {
+    markTipQuizDone(quizState.key);
+    if (quizState.correct >= list.length) addXp(TIP_QUIZ_XP);
+    showToast(`Quiz: ${quizState.correct}/${list.length} dung. +${quizState.correct >= list.length ? TIP_QUIZ_XP : 0} XP`);
+    closeQuizOverlay();
+    return;
+  }
+  quizState.index += 1;
+  renderQuizQuestion();
+}
 
 function renderDailyTip() {
   if (!els.dailyTipText) return;
@@ -3479,6 +3867,129 @@ function renderDailyTip() {
     }
   }
   els.dailyTipText.textContent = selected;
+}
+
+let practiceTimerId = 0;
+function updatePracticeUI() {
+  if (!els.practiceTimer) return;
+  const mins = Math.floor(state.practice.remaining / 60);
+  const secs = state.practice.remaining % 60;
+  els.practiceTimer.textContent = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  if (els.practiceSL) els.practiceSL.checked = !!state.practice.sl;
+  if (els.practiceTP) els.practiceTP.checked = !!state.practice.tp;
+  if (els.practiceOrder) els.practiceOrder.checked = !!state.practice.order;
+}
+
+function openPractice() {
+  state.practice.active = true;
+  state.practice.remaining = PRACTICE_DURATION_SEC;
+  state.practice.sl = false;
+  state.practice.tp = false;
+  state.practice.order = false;
+  if (els.practiceOverlay) els.practiceOverlay.classList.remove("hidden");
+  updatePracticeUI();
+  if (practiceTimerId) clearInterval(practiceTimerId);
+  practiceTimerId = setInterval(() => {
+    if (!state.practice.active) return;
+    state.practice.remaining -= 1;
+    if (state.practice.remaining <= 0) {
+      state.practice.remaining = 0;
+      updatePracticeUI();
+      closePractice();
+      showToast("Hoan thanh luyen tap 3 phut.");
+      return;
+    }
+    updatePracticeUI();
+  }, 1000);
+}
+
+function closePractice() {
+  state.practice.active = false;
+  if (practiceTimerId) {
+    clearInterval(practiceTimerId);
+    practiceTimerId = 0;
+  }
+  if (els.practiceOverlay) els.practiceOverlay.classList.add("hidden");
+}
+
+function markPracticeFromInputs() {
+  if (!state.practice.active) return;
+  const stopInput = parseFloat(els.orderStop?.value || "0");
+  const takeInput = parseFloat(els.orderTake?.value || "0");
+  if (stopInput > 0) state.practice.sl = true;
+  if (takeInput > 0) state.practice.tp = true;
+  updatePracticeUI();
+}
+
+function markPracticeOrder() {
+  if (!state.practice.active) return;
+  state.practice.order = true;
+  updatePracticeUI();
+}
+
+function resolveOrderWarn(value) {
+  if (els.orderWarnOverlay) {
+    els.orderWarnOverlay.classList.remove("show");
+    setTimeout(() => els.orderWarnOverlay.classList.add("hidden"), 200);
+  }
+  if (orderWarnState.resolve) {
+    orderWarnState.resolve(!!value);
+  }
+  orderWarnState.resolve = null;
+}
+
+function showOrderWarn({ title, text, primary, secondary } = {}) {
+  if (!els.orderWarnOverlay) return Promise.resolve(true);
+  if (orderWarnState.resolve) {
+    try {
+      orderWarnState.resolve(false);
+    } catch {
+      // ignore
+    }
+  }
+  if (els.orderWarnTitle) els.orderWarnTitle.textContent = title || "Canh bao";
+  if (els.orderWarnText) els.orderWarnText.textContent = text || "";
+  if (els.orderWarnPrimary) els.orderWarnPrimary.textContent = primary || "Tiep tuc";
+  if (els.orderWarnSecondary) els.orderWarnSecondary.textContent = secondary || "Huy";
+  els.orderWarnOverlay.classList.remove("hidden");
+  requestAnimationFrame(() => els.orderWarnOverlay.classList.add("show"));
+  return new Promise((resolve) => {
+    orderWarnState.resolve = resolve;
+  });
+}
+
+function updateRestTimer() {
+  if (!els.restTimer) return;
+  const remain = Math.max(0, (state.risk.restUntil || 0) - Date.now());
+  const total = Math.ceil(remain / 1000);
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  els.restTimer.textContent = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+function showRestOverlay() {
+  if (!els.restOverlay) return;
+  updateRestTimer();
+  els.restOverlay.classList.remove("hidden");
+  requestAnimationFrame(() => els.restOverlay.classList.add("show"));
+  if (restTimerId) clearInterval(restTimerId);
+  restTimerId = setInterval(() => {
+    if (!state.risk.restUntil || Date.now() >= state.risk.restUntil) {
+      closeRestOverlay();
+      return;
+    }
+    updateRestTimer();
+  }, 1000);
+}
+
+function closeRestOverlay() {
+  if (!els.restOverlay) return;
+  els.restOverlay.classList.remove("show");
+  setTimeout(() => els.restOverlay.classList.add("hidden"), 200);
+  if (restTimerId) {
+    clearInterval(restTimerId);
+    restTimerId = 0;
+  }
 }
 
 function getPollCountsKey() {
@@ -5011,6 +5522,76 @@ function applyOrderPercent(rawValue) {
   updateOrderCalc();
 }
 
+function applyOrderTemplate(kind) {
+  const templates = {
+    safe: { pct: 10, lev: 5, sl: 1, tp: 2 },
+    mid: { pct: 20, lev: 10, sl: 2, tp: 4 },
+    risk: { pct: 30, lev: 25, sl: 3, tp: 6 }
+  };
+  const tpl = templates[kind];
+  if (!tpl) return;
+  const priceUsd = state.market[state.selected]?.price;
+  if (!Number.isFinite(priceUsd) || priceUsd <= 0) {
+    showToast("Gia chua san sang.");
+    return;
+  }
+  const maxLev = getMaxLeverage();
+  const lev = Math.min(tpl.lev, maxLev);
+  if (els.orderLeverage) {
+    els.orderLeverage.value = lev.toString();
+    state.leverage = lev;
+  }
+  if (els.orderPercent) {
+    els.orderPercent.value = String(tpl.pct);
+    if (els.orderPercentLabel) els.orderPercentLabel.textContent = `${tpl.pct}%`;
+  }
+  const slPrice = state.side === "buy"
+    ? priceUsd * (1 - tpl.sl / 100)
+    : priceUsd * (1 + tpl.sl / 100);
+  const tpPrice = state.side === "buy"
+    ? priceUsd * (1 + tpl.tp / 100)
+    : priceUsd * (1 - tpl.tp / 100);
+  if (els.orderStop) els.orderStop.value = toQuote(slPrice).toFixed(4);
+  if (els.orderTake) els.orderTake.value = toQuote(tpPrice).toFixed(4);
+  applyOrderPercent(tpl.pct);
+  updateOrderCalc();
+  markPracticeFromInputs();
+  showToast("Da ap dung mau lenh.");
+}
+
+async function preOrderGuard() {
+  const qty = parseFloat(els.orderQty?.value || "0");
+  if (!Number.isFinite(qty) || qty <= 0) return true;
+
+  const type = els.orderType?.value || "market";
+  const priceInput = parseFloat(els.orderPrice?.value || "0");
+  const basePrice = type === "limit" ? fromQuote(priceInput) : state.market[state.selected]?.price;
+  const priceUsd = type === "market" ? calcSlippage(basePrice, qty, state.side) : basePrice;
+  if (!Number.isFinite(priceUsd) || priceUsd <= 0) return true;
+
+  const stopInput = parseFloat(els.orderStop?.value || "0");
+  const takeInput = parseFloat(els.orderTake?.value || "0");
+  const trailInput = parseFloat(els.orderTrail?.value || "0");
+  const hasSLTP = stopInput > 0 || takeInput > 0 || trailInput > 0;
+
+  const equity = totalEquityUSD();
+  const notional = priceUsd * qty;
+  const sizePct = equity > 0 ? (notional / equity) : 0;
+
+  const warns = [];
+  if (!hasSLTP) warns.push("Ban chua dat SL/TP cho lenh nay.");
+  if (sizePct >= 0.3) warns.push(`Kich thuoc lenh ~${Math.round(sizePct * 100)}% von. Hay can nhac giam.`);
+
+  if (warns.length === 0) return true;
+  const ok = await showOrderWarn({
+    title: "Canh bao rui ro",
+    text: warns.join(" "),
+    primary: "Tiep tuc",
+    secondary: "Huy"
+  });
+  return ok;
+}
+
 function calcSlippage(price, qty, side) {
   const market = state.market[state.selected];
   const liquidity = Math.max(3000, market.vol);
@@ -5209,6 +5790,10 @@ function recordPnl(pnlUsd) {
   }
   if (state.lossStreak >= 5) {
     state.risk.cooldownUntil = Math.max(state.risk.cooldownUntil || 0, now + 60 * 1000);
+    if (!state.risk.restUntil || now > state.risk.restUntil) {
+      state.risk.restUntil = now + REST_SUGGEST_MS;
+      showRestOverlay();
+    }
     showToast("Risk Control: Tạm khóa giao dịch 60s.");
   }
   if (state.lossStreak === 0 && (!state.risk.limitUntil || now > state.risk.limitUntil)) {
@@ -5216,6 +5801,7 @@ function recordPnl(pnlUsd) {
     state.risk.limitUntil = 0;
     updateLeverageOptions();
   }
+  evaluateTradeQuality(pnlUsd);
   if (pnlUsd > 0) unlockAchievement("first_profit");
   if (pnlUsd > 0) addXp(Math.min(120, Math.max(5, pnlUsd * 2)));
   if (pnlUsd < 0 && state.boosters.anonymity > 0) {
@@ -5229,6 +5815,58 @@ function recordPnl(pnlUsd) {
     renderBoosters();
     showToast("Thẻ ẩn danh đã kích hoạt.");
   }
+}
+
+function evaluateTradeQuality(pnlUsd) {
+  const meta = state.lastOrderMeta || {};
+  if (!Number.isFinite(meta.notional) || meta.notional <= 0) return;
+  const equity = typeof totalEquityUSD === "function" ? totalEquityUSD() : state.usd;
+  const equitySafe = Number.isFinite(equity) && equity > 0 ? equity : 1;
+  const ratio = meta.notional / equitySafe;
+  let score = 50;
+  const reasons = [];
+  if (meta.hasSLTP) {
+    score += 20;
+    reasons.push("Co SL/TP");
+  } else {
+    score -= 10;
+    reasons.push("Thieu SL/TP");
+  }
+  if (meta.leverage <= 10) {
+    score += 15;
+    reasons.push("Don bay vua");
+  } else if (meta.leverage <= 20) {
+    score += 5;
+    reasons.push("Don bay cao");
+  } else {
+    score -= 10;
+    reasons.push("Don bay rat cao");
+  }
+  if (ratio <= 0.1) {
+    score += 15;
+    reasons.push("Von nho");
+  } else if (ratio <= 0.25) {
+    score += 8;
+    reasons.push("Von vua");
+  } else if (ratio <= 0.5) {
+    score -= 5;
+    reasons.push("Von lon");
+  } else {
+    score -= 15;
+    reasons.push("Von qua lon");
+  }
+  if (pnlUsd > 0) {
+    score += 10;
+    reasons.push("Chot loi");
+  } else if (pnlUsd < 0) {
+    score -= 5;
+    reasons.push("Lo");
+  }
+  score = clamp(Math.round(score), 0, 100);
+  let grade = "On";
+  if (score >= 75) grade = "Tot";
+  else if (score < 45) grade = "Can cai thien";
+  showToast(`Danh gia lenh: ${grade} (${score}/100). ${reasons.join(", ")}.`);
 }
 
 function calcPositionPnl(pos, price) {
@@ -5272,7 +5910,7 @@ function applyFunding() {
   });
 }
 
-function placeOrder() {
+async function placeOrder() {
   if (!currentUser) {
     showToast("Vui long dang nhap truoc.");
     return;
@@ -5317,6 +5955,15 @@ function placeOrder() {
   const stopInput = stopInputQuote ? fromQuote(stopInputQuote) : 0;
   const takeInput = takeInputQuote ? fromQuote(takeInputQuote) : 0;
 
+  if (!(await preOrderGuard())) return;
+
+  state.lastOrderMeta = {
+    hasSLTP: stopInput > 0 || takeInput > 0 || trailPct > 0,
+    leverage,
+    qty,
+    notional: priceUsd * qty
+  };
+
   const clientId = Date.now() + Math.random();
   const seq = bumpOrderSeq(currentUser);
   const orderPayload = {
@@ -5338,9 +5985,10 @@ function placeOrder() {
   updatePendingBadge();
   socket.emit("place_order", orderPayload);
   showToast("Đã gửi lệnh lên server...");
+  markPracticeOrder();
 }
 
-function placeOrderLegacy() {
+async function placeOrderLegacy() {
   if (!currentUser) {
     showToast("Vui long dang nhap truoc.");
     return;
@@ -5383,6 +6031,15 @@ function placeOrderLegacy() {
   const stopInput = stopInputQuote ? fromQuote(stopInputQuote) : 0;
   const takeInput = takeInputQuote ? fromQuote(takeInputQuote) : 0;
 
+  if (!(await preOrderGuard())) return;
+
+  state.lastOrderMeta = {
+    hasSLTP: stopInput > 0 || takeInput > 0 || trailPct > 0,
+    leverage,
+    qty,
+    notional: priceUsd * qty
+  };
+
   const balance = state.quote === "USD" ? state.usd : state.vnd;
   if (socket && socket.connected) {
     if (side === "buy" && balance < totalQuote + feeQuote) {
@@ -5413,6 +6070,7 @@ function placeOrderLegacy() {
     updatePendingBadge();
     socket.emit("place_order", orderPayload);
     showToast("Đã gửi lệnh lên máy chủ...");
+    markPracticeOrder();
     return;
   }
   const allInBuy = totalQuote + feeQuote > balance * 0.9;
@@ -5576,6 +6234,7 @@ function placeOrderLegacy() {
     }
   }
 
+  markPracticeOrder();
   renderOpenOrders();
   updateBalances();
   updatePortfolio();
@@ -8078,6 +8737,27 @@ function bindEvents() {
       els.quickLetters.classList.toggle("hidden");
     });
   }
+  if (els.practiceBtn) {
+    els.practiceBtn.addEventListener("click", openPractice);
+  }
+  if (els.practiceClose) {
+    els.practiceClose.addEventListener("click", closePractice);
+  }
+  if (els.practiceOverlay) {
+    els.practiceOverlay.addEventListener("click", (e) => {
+      if (e.target === els.practiceOverlay) closePractice();
+    });
+  }
+  if (els.focusToggle) {
+    els.focusToggle.addEventListener("click", () => setFocusMode(!state.focusMode));
+  }
+  if (els.orderTemplates) {
+    els.orderTemplates.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-template]");
+      if (!btn) return;
+      applyOrderTemplate(btn.dataset.template || "");
+    });
+  }
   if (els.mailBtn) {
     els.mailBtn.addEventListener("click", () => toggleMailOverlay(true));
   }
@@ -8121,6 +8801,50 @@ function bindEvents() {
       if (e.target === els.mailOverlay) toggleMailOverlay(false);
     });
   }
+  if (els.tipChips && els.tipChips.length) {
+    els.tipChips.forEach((chip) => {
+      chip.addEventListener("click", () => {
+        els.tipChips.forEach((btn) => btn.classList.remove("active"));
+        chip.classList.add("active");
+        openTipOverlay(chip.dataset.tip);
+      });
+    });
+  }
+  if (els.tipClose) {
+    els.tipClose.addEventListener("click", closeTipOverlay);
+  }
+  if (els.tipOverlay) {
+    els.tipOverlay.addEventListener("click", (e) => {
+      if (e.target === els.tipOverlay) closeTipOverlay();
+    });
+  }
+  if (els.tipAudioBtn) {
+    els.tipAudioBtn.addEventListener("click", () => {
+      setTipAudioEnabled(!state.tipAudioEnabled);
+    });
+  }
+  if (els.quizOptions) {
+    els.quizOptions.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-idx]");
+      if (!btn) return;
+      handleQuizAnswer(parseInt(btn.dataset.idx, 10));
+    });
+  }
+  if (els.quizNext) {
+    els.quizNext.addEventListener("click", nextQuizStep);
+  }
+  if (els.quizSkip) {
+    els.quizSkip.addEventListener("click", closeQuizOverlay);
+  }
+  if (els.quizOverlay) {
+    els.quizOverlay.addEventListener("click", (e) => {
+      if (e.target === els.quizOverlay) closeQuizOverlay();
+    });
+  }
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && tipOpen) closeTipOverlay();
+    if (e.key === "Escape" && quizState.active) closeQuizOverlay();
+  });
   if (els.adminModalOk) {
     els.adminModalOk.addEventListener("click", () => resolveAdminModal(true));
   }
@@ -8136,6 +8860,25 @@ function bindEvents() {
     els.adminModalInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") resolveAdminModal(true);
       if (e.key === "Escape") resolveAdminModal(false);
+    });
+  }
+  if (els.orderWarnPrimary) {
+    els.orderWarnPrimary.addEventListener("click", () => resolveOrderWarn(true));
+  }
+  if (els.orderWarnSecondary) {
+    els.orderWarnSecondary.addEventListener("click", () => resolveOrderWarn(false));
+  }
+  if (els.orderWarnOverlay) {
+    els.orderWarnOverlay.addEventListener("click", (e) => {
+      if (e.target === els.orderWarnOverlay) resolveOrderWarn(false);
+    });
+  }
+  if (els.restClose) {
+    els.restClose.addEventListener("click", closeRestOverlay);
+  }
+  if (els.restOverlay) {
+    els.restOverlay.addEventListener("click", (e) => {
+      if (e.target === els.restOverlay) closeRestOverlay();
     });
   }
   if (els.mobileBar) {
@@ -9512,8 +10255,14 @@ function bindEvents() {
   if (els.orderQtyDown) {
     els.orderQtyDown.addEventListener("click", () => stepOrderQty(-1));
   }
-  els.orderStop.addEventListener("input", updateOrderCalc);
-  els.orderTake.addEventListener("input", updateOrderCalc);
+  els.orderStop.addEventListener("input", () => {
+    updateOrderCalc();
+    markPracticeFromInputs();
+  });
+  els.orderTake.addEventListener("input", () => {
+    updateOrderCalc();
+    markPracticeFromInputs();
+  });
   els.orderTrail.addEventListener("input", updateOrderCalc);
   els.submitOrder.addEventListener("click", placeOrder);
   if (els.orderPercent) {
@@ -9654,6 +10403,7 @@ function init() {
   renderBullBearPoll();
   renderBoosters();
   renderDailyCheckin();
+  renderLessonHistory();
   updatePredictButtons(true);
   renderPredictStatus("Sẵn sàng", "");
   initCopyBot();

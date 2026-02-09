@@ -334,6 +334,18 @@ body[data-theme="light"] .ticker-item {
     "market gamify gamify";
 }
 
+body.focus-one .main-grid {
+  grid-template-columns: 1fr;
+  grid-template-rows: minmax(380px, auto) minmax(240px, auto);
+  grid-template-areas:
+    "chart"
+    "orderform";
+}
+
+body.focus-one .panel:not(.chart):not(.orderform) {
+  display: none;
+}
+
 body.compact .main-grid {
   gap: 10px;
   padding: 8px calc(16px + var(--safe-right)) calc(24px + var(--safe-bottom)) calc(16px + var(--safe-left));
@@ -441,6 +453,41 @@ body[data-theme="light"] .panel {
   gap: 10px;
 }
 
+.order-templates {
+  border: 1px dashed rgba(120, 140, 200, 0.35);
+  border-radius: 14px;
+  padding: 10px;
+  background: rgba(12, 16, 26, 0.6);
+  display: grid;
+  gap: 8px;
+}
+
+.order-templates-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.order-templates-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.order-templates-row button {
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--stroke);
+  background: rgba(18, 24, 38, 0.85);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.order-templates-row button:hover {
+  background: rgba(32, 40, 70, 0.9);
+}
+
 .assist-head {
   display: flex;
   align-items: center;
@@ -465,6 +512,14 @@ body[data-theme="light"] .panel {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.08);
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.assist-progress #assistTimer {
+  color: rgba(255, 197, 110, 0.95);
+  font-weight: 700;
 }
 
 .assist-item {
@@ -972,6 +1027,104 @@ body[data-theme="light"] .slot-selects select {
   gap: 8px;
   justify-content: space-between;
   align-items: center;
+}
+
+.practice-controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 6px 0 4px;
+}
+
+.practice-pop {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 5;
+}
+
+.practice-pop.hidden {
+  display: none;
+}
+
+.practice-card {
+  background: rgba(12, 16, 26, 0.92);
+  border: 1px solid rgba(120, 140, 200, 0.3);
+  border-radius: 14px;
+  padding: 12px;
+  color: #e7ecff;
+  width: min(280px, 80vw);
+  display: grid;
+  gap: 10px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
+}
+
+.practice-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.practice-title {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.practice-sub {
+  font-size: 11px;
+  color: #9aa4c7;
+}
+
+.practice-timer {
+  font-size: 22px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.practice-check {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.practice-check label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tip-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+
+.tip-chip {
+  border: 1px solid var(--stroke);
+  background: rgba(14, 18, 30, 0.85);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.tip-chip:hover {
+  transform: translateY(-1px);
+  background: rgba(30, 40, 70, 0.9);
+  border-color: rgba(120, 160, 255, 0.45);
+}
+
+.tip-chip.active {
+  border-color: rgba(90, 200, 255, 0.7);
+  box-shadow: 0 0 0 2px rgba(90, 200, 255, 0.18);
+}
+
+body.compact .tip-chips {
+  display: none;
 }
 
 .toolbar-group {
@@ -3106,6 +3259,63 @@ body[data-theme="light"] .booster-item {
   visibility: visible;
 }
 
+.rest-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 8, 14, 0.85);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2380;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+
+.rest-overlay.show {
+  opacity: 1;
+  visibility: visible;
+}
+
+.rest-card {
+  width: min(420px, 92vw);
+  background: rgba(12, 16, 26, 0.96);
+  border: 1px solid rgba(120, 140, 200, 0.3);
+  border-radius: 16px;
+  padding: 18px;
+  text-align: center;
+  color: #e7ecff;
+  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.45);
+  display: grid;
+  gap: 10px;
+}
+
+.rest-title {
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.rest-sub {
+  font-size: 13px;
+  color: #9aa4c7;
+}
+
+.rest-timer {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.rest-card button {
+  border: 1px solid rgba(120, 140, 200, 0.35);
+  background: rgba(18, 24, 38, 0.9);
+  color: #e7ecff;
+  border-radius: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
 .broadcast-card {
   width: min(520px, 92vw);
   background: rgba(12, 16, 26, 0.96);
@@ -3151,6 +3361,126 @@ body[data-theme="light"] .booster-item {
 .mail-overlay.show {
   opacity: 1;
   visibility: visible;
+}
+
+.tip-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 9, 16, 0.88);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2350;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+
+.tip-overlay.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.tip-overlay.show {
+  opacity: 1;
+  visibility: visible;
+}
+
+.tip-overlay .tip-card {
+  width: min(520px, 92vw);
+  background: rgba(12, 16, 26, 0.96);
+  border: 1px solid rgba(120, 140, 200, 0.3);
+  border-radius: 16px;
+  padding: 16px 18px;
+  color: #e7ecff;
+  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.45);
+  gap: 10px;
+}
+
+.tip-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tip-title {
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.tip-sub {
+  font-size: 12px;
+  color: #9aa4c7;
+}
+
+.tip-close {
+  border: 1px solid rgba(120, 140, 200, 0.35);
+  background: rgba(18, 24, 38, 0.9);
+  color: #e7ecff;
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.tip-video-wrap {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba(36, 44, 70, 0.8), rgba(12, 16, 30, 0.9));
+  aspect-ratio: 16 / 9;
+}
+
+.tip-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.tip-video-wrap.has-video .tip-video {
+  opacity: 1;
+}
+
+.tip-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  color: rgba(231, 236, 255, 0.85);
+  letter-spacing: 0.3px;
+  background: radial-gradient(circle at 30% 20%, rgba(95, 200, 255, 0.2), transparent 50%);
+  animation: tipPulse 2.6s ease-in-out infinite;
+}
+
+.tip-video-wrap.has-video .tip-fallback {
+  opacity: 0;
+}
+
+@keyframes tipPulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+
+.tip-text {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.tip-timer {
+  font-size: 12px;
+  color: #9aa4c7;
+}
+
+body.tip-open {
+  overflow: hidden;
 }
 
 .mail-card {
@@ -3238,6 +3568,198 @@ body[data-theme="light"] .booster-item {
   display: flex;
   gap: 6px;
   align-items: center;
+}
+
+.tip-audio-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tip-audio {
+  border: 1px solid rgba(120, 140, 200, 0.35);
+  background: rgba(18, 24, 38, 0.9);
+  color: #e7ecff;
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.tip-audio.off {
+  opacity: 0.6;
+}
+
+.quiz-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 9, 16, 0.88);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2360;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+
+.quiz-overlay.show {
+  opacity: 1;
+  visibility: visible;
+}
+
+.quiz-card {
+  width: min(520px, 92vw);
+  background: rgba(12, 16, 26, 0.96);
+  border: 1px solid rgba(120, 140, 200, 0.3);
+  border-radius: 16px;
+  padding: 18px;
+  color: #e7ecff;
+  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.45);
+  display: grid;
+  gap: 12px;
+}
+
+.quiz-title {
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.quiz-sub {
+  font-size: 12px;
+  color: #9aa4c7;
+}
+
+.quiz-question {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.quiz-options {
+  display: grid;
+  gap: 8px;
+}
+
+.quiz-options button {
+  border: 1px solid var(--stroke);
+  background: rgba(18, 24, 38, 0.9);
+  color: #e7ecff;
+  border-radius: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+}
+
+.quiz-options button.correct {
+  border-color: rgba(62, 240, 183, 0.6);
+  background: rgba(62, 240, 183, 0.15);
+}
+
+.quiz-options button.wrong {
+  border-color: rgba(255, 92, 122, 0.6);
+  background: rgba(255, 92, 122, 0.15);
+}
+
+.quiz-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.quiz-actions button {
+  border: 1px solid rgba(120, 140, 200, 0.35);
+  background: rgba(18, 24, 38, 0.9);
+  color: #e7ecff;
+  border-radius: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.order-warn-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 9, 16, 0.88);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2360;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+
+.order-warn-overlay.show {
+  opacity: 1;
+  visibility: visible;
+}
+
+.order-warn-card {
+  width: min(420px, 92vw);
+  background: rgba(12, 16, 26, 0.96);
+  border: 1px solid rgba(120, 140, 200, 0.3);
+  border-radius: 16px;
+  padding: 18px;
+  color: #e7ecff;
+  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.45);
+  display: grid;
+  gap: 10px;
+}
+
+.order-warn-title {
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.order-warn-text {
+  font-size: 13px;
+  color: #9aa4c7;
+}
+
+.order-warn-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.order-warn-actions button {
+  border: 1px solid rgba(120, 140, 200, 0.35);
+  background: rgba(18, 24, 38, 0.9);
+  color: #e7ecff;
+  border-radius: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.lesson-history {
+  border: 1px dashed rgba(120, 140, 200, 0.3);
+  border-radius: 14px;
+  padding: 10px;
+  background: rgba(12, 16, 26, 0.6);
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.lesson-history-title {
+  font-weight: 600;
+  color: #cdd7ff;
+}
+
+.lesson-history-list {
+  display: grid;
+  gap: 6px;
+}
+
+.lesson-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .mail-actions button {

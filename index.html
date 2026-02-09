@@ -187,6 +187,16 @@
           <button class="time-btn ind" data-ind="macd">MACD</button>
         </div>
       </div>
+      <div class="tip-chips" id="tipChips" data-tips="1">
+        <button class="tip-chip" data-tip="candle">Nến là gì?</button>
+        <button class="tip-chip" data-tip="trend">Xác định xu hướng</button>
+        <button class="tip-chip" data-tip="sl-tp">SL/TP cơ bản</button>
+        <button class="tip-chip" data-tip="risk">Quản lý rủi ro</button>
+      </div>
+      <div class="practice-controls">
+        <button id="practiceBtn" class="mini" type="button">Thuc hanh 3 phut</button>
+        <button id="focusToggle" class="mini" type="button">Focus 1 coin</button>
+      </div>
       <div class="chart-wrap" id="chartArea">
           <div class="chart-grid layout-1" id="chartGrid">
           <div class="chart-tile" data-slot="0">
@@ -219,6 +229,23 @@
           </div>
         </div>
         <div class="chart-tooltip hidden" id="chartTooltip"></div>
+        <div class="practice-pop hidden" id="practiceOverlay">
+          <div class="practice-card">
+            <div class="practice-head">
+              <div>
+                <div class="practice-title">Luyen tap 3 phut</div>
+                <div class="practice-sub">Hoan thanh SL/TP + dat lenh</div>
+              </div>
+              <button id="practiceClose" type="button">Thoat</button>
+            </div>
+            <div class="practice-timer" id="practiceTimer">03:00</div>
+            <div class="practice-check">
+              <label><input type="checkbox" id="practiceSL" /> Dat SL</label>
+              <label><input type="checkbox" id="practiceTP" /> Dat TP</label>
+              <label><input type="checkbox" id="practiceOrder" /> Dat lenh</label>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -269,7 +296,10 @@
             <div class="assist-title">Hôm nay làm gì?</div>
             <div class="assist-sub">3 bước nhanh cho người mới</div>
           </div>
-          <div class="assist-progress"><span id="assistDone">0/3</span></div>
+          <div class="assist-progress">
+            <span id="assistTimer">30s</span>
+            <span id="assistDone">0/3</span>
+          </div>
         </div>
         <div class="assist-item" data-assist="viewChart">
           <div class="assist-label">Xem biểu đồ và hiểu xu hướng</div>
@@ -291,6 +321,14 @@
             <button class="assist-btn" id="assistSampleSLTP" type="button">Áp dụng</button>
             <span class="assist-check">✓</span>
           </div>
+        </div>
+      </div>
+      <div class="order-templates" id="orderTemplates">
+        <div class="order-templates-title">Mau lenh 1-click</div>
+        <div class="order-templates-row">
+          <button type="button" data-template="safe">An toan</button>
+          <button type="button" data-template="mid">Trung binh</button>
+          <button type="button" data-template="risk">Mao hiem</button>
         </div>
       </div>
       <div class="form-grid">
@@ -464,6 +502,10 @@
       <div class="achievement-list" id="achievementList"></div>
       <div class="leaderboard" id="leaderboard"></div>
       <div class="leaderboard" id="weeklyLeaderboard"></div>
+      <div class="lesson-history" id="lessonHistory">
+        <div class="lesson-history-title">Lich su hoc tap</div>
+        <div class="lesson-history-list" id="lessonHistoryList"></div>
+      </div>
       <div class="poll-card" id="bullBearPoll">
         <div class="poll-title">Thị trường hôm nay?</div>
         <div class="poll-sub">Bầu chọn Bull/Bear để nhận XP</div>
@@ -498,6 +540,14 @@
       <div class="broadcast-title">Thông báo từ Admin</div>
       <div class="broadcast-message" id="broadcastMessage">...</div>
       <div class="broadcast-timer" id="broadcastTimer"></div>
+    </div>
+  </div>
+  <div class="rest-overlay hidden" id="restOverlay">
+    <div class="rest-card">
+      <div class="rest-title">De xuat nghi 15 phut</div>
+      <div class="rest-sub" id="restSub">Ban dang thua lien tuc. Hay nghi de binh tinh.</div>
+      <div class="rest-timer" id="restTimer">15:00</div>
+      <button id="restClose" type="button">Dong</button>
     </div>
   </div>
   <div class="mail-overlay hidden" id="mailOverlay">
@@ -539,6 +589,48 @@
     <button id="quickBuyBtn" type="button" aria-label="Mua nhanh">Mua nhanh</button>
     <button id="quickSellBtn" type="button" aria-label="Ban nhanh">Bán nhanh</button>
     <button id="quickCancelBtn" type="button" aria-label="Huy lenh gan nhat">Hủy lệnh gần nhất</button>
+  </div>
+  <div class="tip-overlay hidden" id="tipOverlay">
+    <div class="tip-card">
+      <div class="tip-head">
+        <div>
+          <div class="tip-title" id="tipTitle">Video tip</div>
+          <div class="tip-sub" id="tipSub">15 giây</div>
+        </div>
+        <button class="tip-close" id="tipClose" type="button">Đóng</button>
+      </div>
+      <div class="tip-audio-row">
+        <button class="tip-audio" id="tipAudioBtn" type="button">Audio</button>
+      </div>
+      <div class="tip-video-wrap" id="tipVideoWrap">
+        <video id="tipVideo" class="tip-video" playsinline muted></video>
+        <div class="tip-fallback" id="tipFallback">Đang phát tip...</div>
+      </div>
+      <div class="tip-text" id="tipText"></div>
+      <div class="tip-timer">Còn lại: <span id="tipTimer">15s</span></div>
+    </div>
+  </div>
+  <div class="quiz-overlay hidden" id="quizOverlay">
+    <div class="quiz-card">
+      <div class="quiz-title" id="quizTitle">Mini quiz</div>
+      <div class="quiz-sub" id="quizSub">Tra loi 2 cau de nhan XP</div>
+      <div class="quiz-question" id="quizQuestion"></div>
+      <div class="quiz-options" id="quizOptions"></div>
+      <div class="quiz-actions">
+        <button id="quizSkip" type="button">Bo qua</button>
+        <button id="quizNext" type="button">Tiep tuc</button>
+      </div>
+    </div>
+  </div>
+  <div class="order-warn-overlay hidden" id="orderWarnOverlay">
+    <div class="order-warn-card">
+      <div class="order-warn-title" id="orderWarnTitle">Canh bao</div>
+      <div class="order-warn-text" id="orderWarnText"></div>
+      <div class="order-warn-actions">
+        <button id="orderWarnSecondary" type="button">Huy</button>
+        <button id="orderWarnPrimary" type="button">Tiep tuc</button>
+      </div>
+    </div>
   </div>
   <div class="confirm-overlay hidden" id="logoutOverlay">
     <div class="confirm-card">
