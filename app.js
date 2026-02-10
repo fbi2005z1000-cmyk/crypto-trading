@@ -214,6 +214,8 @@ const ADMIN_SPAM_KEY = "g";
 const ADMIN_SPAM_COUNT = 20;
 const ADMIN_WINDOW_MS = 5000;
 const socketState = { connected: false, offline: false };
+let socketEventsBound = false;
+let authEventsBound = false;
 
 const state = {
   quote: "USD",
@@ -3734,7 +3736,8 @@ function applyAcceptedOrder(order, priceUsd) {
 }
 
 function initSocket() {
-  if (!socket) return;
+  if (!socket || socketEventsBound) return;
+  socketEventsBound = true;
   socket.on("connect", () => {
     socketState.connected = true;
     socketState.offline = false;
@@ -11900,7 +11903,9 @@ function handleAdminComboKeyDown(event) {
   }
 }
 
-function bindEvents() {
+function bindAuthEvents() {
+  if (authEventsBound) return;
+  authEventsBound = true;
   if (els.authLoginBtn) {
     els.authLoginBtn.addEventListener("click", () => sendAuth("login"));
   }
@@ -11924,6 +11929,10 @@ function bindEvents() {
       }
     });
   }
+}
+
+function bindEvents() {
+  bindAuthEvents();
   if (els.quickToggle) {
     els.quickToggle.addEventListener("click", () => {
       if (!els.quickLetters) return;
@@ -14058,6 +14067,8 @@ function applyFilters(options = {}) {
   renderMarketVirtual();
 }
 
+bindAuthEvents();
+initSocket();
 init();
 
 function getAchievementTitle(id) {
