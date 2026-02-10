@@ -1,0 +1,16 @@
+.env
+node_modules/
+*.log
+users.db
+users.db-wal
+users.db-shm
+users.json
+spam_heatmap.json
+invite_codes.json
+admin_whitelist.json
+ip_blacklist.json
+config_changes.log
+fee_leverage.log
+security.log
+admin.log
+user_edits.log
