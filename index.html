@@ -6,7 +6,8 @@
   <title>Crypto Trading Arena - Trò chơi</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
-<body>
+<body class="chat-popup-only">
+  <div id="flagBg" class="flag-bg" aria-hidden="true"></div>
   <canvas id="bgParticles" class="bg-canvas"></canvas>
   <div class="noise"></div>
   <div class="orb orb-a"></div>
@@ -162,7 +163,6 @@
   <main class="main-grid">
     <section class="panel market" id="panelMarket">
       <div class="panel-head">
-        <button id="chatPopupOpen" class="mini" type="button">Mở popup</button>
         <div>
           <div class="panel-title">Thị trường</div>
           <div class="panel-sub">Tất cả cặp coin (mô phỏng)</div>
@@ -525,19 +525,19 @@
           <div class="chat-online-list" id="chatOnlineList"></div>
         </div>
         <div class="chat-tool-actions">
-          <select id="chatFilter" aria-label="Loc chat">
-            <option value="all">Tat ca</option>
-            <option value="user">Nguoi choi</option>
+          <select id="chatFilter" aria-label="Lọc chat">
+            <option value="all">Tất cả</option>
+            <option value="user">Người chơi</option>
             <option value="bot">Bot</option>
-            <option value="system">He thong</option>
-            <option value="pinned">Ghim</option>
+            <option value="system">Hệ thống</option>
+            <option value="pinned">Đã ghim</option>
           </select>
-          <select id="chatMuteSelect" aria-label="Mute chat">
-            <option value="15">Mute 15m</option>
-            <option value="30">Mute 30m</option>
-            <option value="60">Mute 60m</option>
+          <select id="chatMuteSelect" aria-label="Tắt chat">
+            <option value="15">Tắt 15 phút</option>
+            <option value="30">Tắt 30 phút</option>
+            <option value="60">Tắt 60 phút</option>
           </select>
-          <button id="chatMuteBtn" type="button">Mute</button>
+          <button id="chatMuteBtn" type="button">Tắt chat</button>
         </div>
       </div>
       <div class="chat-pinned" id="chatPinned"></div>
@@ -702,8 +702,8 @@
     <div class="chat-popup-card">
       <div class="chat-popup-head">
         <div>
-          <div class="chat-popup-title">TrÃ² chuyá»‡n</div>
-          <div class="chat-popup-sub">PhÃ²ng chat chung</div>
+          <div class="chat-popup-title">Trò chuyện</div>
+          <div class="chat-popup-sub">Phòng chat chung</div>
         </div>
         <div class="chat-popup-actions">
           <button id="chatPopupClose" type="button">Đóng</button>

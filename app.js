@@ -4661,10 +4661,10 @@ function updateChatMuteUI() {
   if (isChatMuted()) {
     const remain = Math.max(0, state.chatMuteUntil - Date.now());
     const mins = Math.ceil(remain / 60000);
-    els.chatMuteBtn.textContent = `Unmute (${mins}m)`;
+    els.chatMuteBtn.textContent = `Bật chat (${mins}p)`;
     if (els.chatMuteSelect) els.chatMuteSelect.disabled = true;
   } else {
-    els.chatMuteBtn.textContent = "Mute";
+    els.chatMuteBtn.textContent = "Tắt chat";
     if (els.chatMuteSelect) els.chatMuteSelect.disabled = false;
   }
 }
@@ -4736,42 +4736,42 @@ function getFilteredChatMessages() {
 
 function renderChatPinnedInto(target) {
   if (!target) return;
-  const pinned = (state.chatMessages || []).filter((msg) => msg.pinned && !msg.hidden);
-  if (pinned.length === 0) {
-    target.classList.remove("show");
-    target.innerHTML = "";
-    return;
+    const pinned = (state.chatMessages || []).filter((msg) => msg.pinned && !msg.hidden);
+    if (pinned.length === 0) {
+      target.classList.remove("show");
+      target.innerHTML = "";
+      return;
+    }
+    target.classList.add("show");
+    target.innerHTML = pinned
+      .slice(-3)
+      .map((msg) => {
+        const user = escapeHtml(msg.user || "Ẩn danh");
+        const text = escapeHtml(msg.text || "");
+        return `<div class="chat-message"><div class="chat-user">${user}</div><div>${text}</div></div>`;
+      })
+      .join("");
   }
-  target.classList.add("show");
-  target.innerHTML = pinned
-    .slice(-3)
-    .map((msg) => {
-      const user = escapeHtml(msg.user || "Anon");
-      const text = escapeHtml(msg.text || "");
-      return `<div class="chat-message"><div class="chat-user">${user}</div><div>${text}</div></div>`;
-    })
-    .join("");
-}
 
 function renderChatMessagesInto(target) {
   if (!target) return;
   if (isChatMuted()) {
     const until = new Date(state.chatMuteUntil || Date.now()).toLocaleTimeString();
-    target.innerHTML = `<div class="chat-message"><div class="chat-user">He thong</div><div>Chat dang tam tat den ${until}.</div></div>`;
+      target.innerHTML = `<div class="chat-message"><div class="chat-user">Hệ thống</div><div>Chat đang tạm tắt đến ${until}.</div></div>`;
     return;
   }
   const list = getFilteredChatMessages();
   if (list.length === 0) {
-    target.innerHTML = `<div class="chat-message"><div class="chat-user">Há»‡ thá»‘ng</div><div>ChÆ°a cÃ³ tin nháº¯n.</div></div>`;
+      target.innerHTML = `<div class="chat-message"><div class="chat-user">Hệ thống</div><div>Chưa có tin nhắn.</div></div>`;
     return;
   }
   target.innerHTML = list
     .slice(-200)
     .map((msg) => {
-      const user = escapeHtml(msg.user || "áº¨n danh");
+        const user = escapeHtml(msg.user || "Ẩn danh");
       const text = msg.hidden
-        ? "Tin nhan da bi an do bi bao cao."
-        : escapeHtml(msg.text || "");
+          ? "Tin nhắn đã bị ẩn do bị báo cáo."
+          : escapeHtml(msg.text || "");
       const time = formatDateTime(msg.ts || Date.now());
       const botClass = msg.bot ? " bot" : "";
       const userClass = msg.bot ? "chat-user bot" : "chat-user";
@@ -4781,13 +4781,13 @@ function renderChatMessagesInto(target) {
         const count = reactions[emoji] || 0;
         return `<button data-chat-action="react" data-emoji="${emoji}">${emoji} ${count}</button>`;
       }).join("");
-      const pinLabel = msg.pinned ? "Bo ghim" : "Ghim";
+        const pinLabel = msg.pinned ? "Bỏ ghim" : "Ghim";
       const actionsHtml = currentUser
         ? `
           <div class="chat-message-actions">
             <div class="chat-reactions">${reactionHtml}</div>
             <button data-chat-action="pin">${pinLabel}</button>
-            <button data-chat-action="report">Bao cao</button>
+              <button data-chat-action="report">Báo cáo</button>
           </div>`
         : "";
       return `
@@ -4850,7 +4850,7 @@ function normalizeChatMessage(msg) {
   if (!msg) return null;
   return {
     id: msg.id ?? `${Date.now()}-${Math.random()}`,
-    user: msg.user || "Anon",
+      user: msg.user || "Ẩn danh",
     text: msg.text || "",
     bot: !!msg.bot,
     type: msg.type || (msg.bot ? "bot" : "user"),
@@ -4948,6 +4948,19 @@ function relocateChatPopupButton() {
   }
 }
 
+function relocateChatToolsToPopup() {
+  if (!document.body.classList.contains("chat-popup-only")) return;
+  if (!els.chatPopupOverlay) return;
+  const tools = document.querySelector(".chat-tools");
+  if (!tools) return;
+  const card = els.chatPopupOverlay.querySelector(".chat-popup-card");
+  if (!card) return;
+  const anchor = els.chatPopupPinned || card.querySelector(".chat-pinned");
+  if (tools.parentElement !== card) {
+    card.insertBefore(tools, anchor || card.firstChild);
+  }
+}
+
 function handleChatActionClick(event) {
   const btn = event.target.closest("[data-chat-action]");
   if (!btn || !socket) return;
@@ -4963,14 +4976,14 @@ function handleChatActionClick(event) {
   }
   if (action === "report") {
     socket.emit("chat_report", { id });
-    showToast("Da bao cao tin nhan.");
+      showToast("Đã báo cáo tin nhắn.");
     return;
   }
   if (action === "pin") {
     const msg = (state.chatMessages || []).find((m) => String(m.id) === String(id));
     const next = msg ? !msg.pinned : true;
     socket.emit("chat_pin", { id, pinned: next });
-    showToast(next ? "Da ghim tin nhan." : "Da bo ghim.");
+      showToast(next ? "Đã ghim tin nhắn." : "Đã bỏ ghim.");
   }
 }
 
@@ -13497,6 +13510,7 @@ function init() {
   buildAdminCoinSelect();
   bindEvents();
   relocateChatPopupButton();
+  relocateChatToolsToPopup();
   if (els.chatFilter) els.chatFilter.value = state.chatFilter || "all";
   updateChatMuteUI();
   updateChatBadge();
@@ -13569,7 +13583,7 @@ function buildMarketTable() {
   header.className = "market-header";
   header.innerHTML = `
     <div>Cáº·p</div>
-    <div>GiÃ¡</div>
+    <div>Giá</div>
     <div>24h</div>
     <div class="vol-toggle">Vol <button id="marketToggleBtn" class="market-toggle-btn" type="button">${state.marketCollapsed ? "-" : "+"}</button></div>
   `;
@@ -13614,7 +13628,7 @@ function createMarketRow(coin, index) {
         <div class="coin-sym">${coin.symbol}</div>
         <div class="coin-name">${coin.name}</div>
       </div>
-      <button class="star" aria-label="Theo dÃµi">â˜†</button>
+      <button class="star" aria-label="Theo dõi">☆</button>
     </div>
     <div class="price" data-field="price"></div>
     <div class="change" data-field="change"></div>
