@@ -79,6 +79,53 @@
     </div>
   </div>
 
+  <div class="candle-guide-overlay hidden" id="candleGuideOverlay" aria-hidden="true">
+    <div class="candle-guide-card">
+      <div class="candle-guide-head">
+        <div>
+          <div class="candle-guide-title">Thư viện mẫu nến</div>
+          <div class="candle-guide-sub">50 mẫu nến kinh điển kèm cách nhận biết</div>
+        </div>
+        <div class="candle-guide-actions">
+          <span class="candle-guide-count" id="candleGuideCount">0/50</span>
+          <button id="candlePracticeBtn" type="button">Luyện tập</button>
+          <button id="candleGuideClose" type="button">Đóng</button>
+        </div>
+      </div>
+      <div class="candle-guide-progress">
+        <div class="candle-guide-progress-fill" id="candleGuideProgressFill"></div>
+      </div>
+      <div class="candle-guide-search">
+        <input id="candleGuideSearch" type="text" placeholder="Tìm mẫu nến (Hammer, Doji...)" />
+      </div>
+      <div class="candle-guide-list" id="candleGuideList"></div>
+    </div>
+  </div>
+
+  <div class="candle-practice-overlay hidden" id="candlePracticeOverlay" aria-hidden="true">
+    <div class="candle-practice-card">
+      <div class="candle-practice-head">
+        <div>
+          <div class="candle-practice-title">Luyện tập nhận diện nến</div>
+          <div class="candle-practice-sub">Quan sát mẫu nến và chọn đúng tên.</div>
+        </div>
+        <div class="candle-practice-actions">
+          <span class="candle-practice-score" id="candlePracticeScore">0/0</span>
+          <button id="candlePracticeClose" type="button">Đóng</button>
+        </div>
+      </div>
+      <div class="candle-practice-canvas">
+        <canvas id="candlePracticeCanvas" width="420" height="200"></canvas>
+      </div>
+      <div class="candle-practice-question" id="candlePracticeQuestion">Mẫu nến là gì?</div>
+      <div class="candle-practice-options" id="candlePracticeOptions"></div>
+      <div class="candle-practice-footer">
+        <button id="candlePracticeNext" type="button">Câu khác</button>
+        <button id="candlePracticeClaim" type="button" class="primary">Nhận thưởng</button>
+      </div>
+    </div>
+  </div>
+
   <header class="topbar">
     <div class="brand">
       <div class="logo">Σ</div>
@@ -206,6 +253,7 @@
       <div class="practice-controls">
         <button id="practiceBtn" class="mini" type="button">Thực hành 3 phút</button>
         <button id="focusToggle" class="mini" type="button">Tập trung 1 coin</button>
+        <button id="candleGuideBtn" class="mini" type="button">Mẫu nến (50)</button>
       </div>
       <div class="replay-controls">
         <button id="replayToggle" class="mini" type="button">Replay 5 phút</button>
@@ -244,6 +292,9 @@
             <canvas class="chart-layer chart-fg" id="priceFg3" width="900" height="380"></canvas>
             <canvas class="chart-layer chart-fx" id="priceFx3" width="900" height="380"></canvas>
           </div>
+        </div>
+        <div class="candle-ticker" id="candleTicker" aria-label="Danh sách mẫu nến">
+          <div class="candle-ticker-track" id="candleTickerTrack"></div>
         </div>
         <div class="chart-tooltip hidden" id="chartTooltip"></div>
         <div class="practice-pop hidden" id="practiceOverlay">
@@ -535,6 +586,10 @@
       <div class="achievement-list" id="achievementList"></div>
       <div class="leaderboard-controls">
         <div class="leaderboard-title">BXH đại gia (Top 100)</div>
+        <div class="leaderboard-tabs">
+          <button id="lbTabReal" class="mini active" type="button">Rank thật</button>
+          <button id="lbTabSandbox" class="mini" type="button">Sandbox</button>
+        </div>
         <button id="lbPrivacyBtn" class="mini" type="button">Công khai</button>
       </div>
       <div class="leaderboard rich" id="richLeaderboard"></div>

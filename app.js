@@ -277,6 +277,9 @@ const state = {
   leaderboard: [],
   weeklyLeaderboard: [],
   richLeaderboard: [],
+  richLeaderboardReal: [],
+  richLeaderboardSandbox: [],
+  richLeaderboardMode: "real",
   leaderboardPrivacy: "public",
   chatMessages: [],
   marketFromServer: false,
@@ -319,6 +322,12 @@ const LESSON_HISTORY_KEY = "cta_lesson_history_v1";
 const TIP_AUDIO_KEY = "cta_tip_audio_v1";
 const TIP_QUIZ_KEY_PREFIX = "cta_tip_quiz_";
 const FOCUS_MODE_KEY = "cta_focus_mode_v1";
+const CANDLE_LEARN_KEY = "cta_candle_learned_v1";
+const CANDLE_PRACTICE_REWARD_KEY = "cta_candle_practice_reward_v1";
+const CANDLE_PRACTICE_MIN_QUESTIONS = 10;
+const CANDLE_PRACTICE_MIN_SCORE = 0.7;
+const CANDLE_PRACTICE_REWARD_XP = 60;
+const CANDLE_PRACTICE_REWARD_INSURANCE = 1;
 const PRACTICE_DURATION_SEC = 180;
 const REST_SUGGEST_MS = 15 * 60 * 1000;
 const MOBILE_BREAKPOINT = 900;
@@ -357,6 +366,15 @@ let spinState = {
   remaining: 0,
   loginToday: false,
   reason: ""
+};
+let candleLearned = new Set();
+let candlePracticeState = {
+  active: false,
+  total: 0,
+  correct: 0,
+  current: null,
+  options: [],
+  answered: false
 };
 
 function setAuthState(username) {
@@ -2642,6 +2660,8 @@ const els = {
   weeklyLeaderboard: document.getElementById("weeklyLeaderboard"),
   richLeaderboard: document.getElementById("richLeaderboard"),
   lbPrivacyBtn: document.getElementById("lbPrivacyBtn"),
+  lbTabReal: document.getElementById("lbTabReal"),
+  lbTabSandbox: document.getElementById("lbTabSandbox"),
   dailyTipCard: document.getElementById("dailyTipCard"),
   dailyTipText: document.getElementById("dailyTipText"),
   quickActions: document.getElementById("quickActions"),
@@ -2662,6 +2682,24 @@ const els = {
   replaySliderWrap: document.getElementById("replaySliderWrap"),
   replayRange: document.getElementById("replayRange"),
   replayLabel: document.getElementById("replayLabel"),
+  candleGuideBtn: document.getElementById("candleGuideBtn"),
+  candleGuideOverlay: document.getElementById("candleGuideOverlay"),
+  candleGuideClose: document.getElementById("candleGuideClose"),
+  candleGuideSearch: document.getElementById("candleGuideSearch"),
+  candleGuideList: document.getElementById("candleGuideList"),
+  candleGuideCount: document.getElementById("candleGuideCount"),
+  candleGuideProgressFill: document.getElementById("candleGuideProgressFill"),
+  candlePracticeBtn: document.getElementById("candlePracticeBtn"),
+  candlePracticeOverlay: document.getElementById("candlePracticeOverlay"),
+  candlePracticeClose: document.getElementById("candlePracticeClose"),
+  candlePracticeCanvas: document.getElementById("candlePracticeCanvas"),
+  candlePracticeQuestion: document.getElementById("candlePracticeQuestion"),
+  candlePracticeOptions: document.getElementById("candlePracticeOptions"),
+  candlePracticeScore: document.getElementById("candlePracticeScore"),
+  candlePracticeNext: document.getElementById("candlePracticeNext"),
+  candlePracticeClaim: document.getElementById("candlePracticeClaim"),
+  candleTicker: document.getElementById("candleTicker"),
+  candleTickerTrack: document.getElementById("candleTickerTrack"),
   lessonHistoryList: document.getElementById("lessonHistoryList"),
   sentimentValue: document.getElementById("sentimentValue"),
   sentimentFill: document.getElementById("sentimentFill"),
@@ -3523,8 +3561,15 @@ function initSocket() {
     showToast(payload?.reason || "Không thể gửi chat.");
   });
   socket.on("leaderboard_update", (payload) => {
-    state.richLeaderboard = Array.isArray(payload?.rows) ? payload.rows : [];
+    const rowsReal = Array.isArray(payload?.rowsReal)
+      ? payload.rowsReal
+      : (Array.isArray(payload?.rows) ? payload.rows : []);
+    const rowsSandbox = Array.isArray(payload?.rowsSandbox) ? payload.rowsSandbox : [];
+    state.richLeaderboardReal = rowsReal;
+    state.richLeaderboardSandbox = rowsSandbox;
+    state.richLeaderboard = rowsReal;
     if (payload?.selfPrivacy) state.leaderboardPrivacy = payload.selfPrivacy;
+    updateRichLeaderboardTabs();
     renderRichLeaderboard();
     updateLeaderboardPrivacyUI();
   });
@@ -4113,7 +4158,8 @@ function saveLocal() {
     tipAudioEnabled: !!state.tipAudioEnabled,
     academyFlags: state.academyFlags,
     academyManual: state.academyManual,
-    academyLang: academyState?.lang || state.academyLang
+    academyLang: academyState?.lang || state.academyLang,
+    richLeaderboardMode: state.richLeaderboardMode
   };
 
   localStorage.setItem("cryptoGameSave_UI_v1", JSON.stringify(saveData));
@@ -4161,6 +4207,9 @@ function loadLocal() {
     if (typeof data.academyLang === "string") {
       state.academyLang = data.academyLang;
       if (academyState) academyState.lang = data.academyLang;
+    }
+    if (data.richLeaderboardMode) {
+      state.richLeaderboardMode = data.richLeaderboardMode === "sandbox" ? "sandbox" : "real";
     }
 
     return true;
@@ -4464,20 +4513,43 @@ function updateLeaderboardPrivacyUI() {
   els.lbPrivacyBtn.textContent = value;
 }
 
+function updateRichLeaderboardTabs() {
+  if (els.lbTabReal) {
+    els.lbTabReal.classList.toggle("active", state.richLeaderboardMode !== "sandbox");
+  }
+  if (els.lbTabSandbox) {
+    els.lbTabSandbox.classList.toggle("active", state.richLeaderboardMode === "sandbox");
+  }
+}
+
+function setRichLeaderboardMode(mode) {
+  state.richLeaderboardMode = mode === "sandbox" ? "sandbox" : "real";
+  updateRichLeaderboardTabs();
+  renderRichLeaderboard();
+}
+
 function renderRichLeaderboard() {
   if (!els.richLeaderboard) return;
-  if (!Array.isArray(state.richLeaderboard) || state.richLeaderboard.length === 0) {
+  const list = state.richLeaderboardMode === "sandbox"
+    ? state.richLeaderboardSandbox
+    : state.richLeaderboardReal;
+  if (!Array.isArray(list) || list.length === 0) {
     els.richLeaderboard.innerHTML = `<div class="leader-row">Chưa có dữ liệu</div>`;
     return;
   }
-  els.richLeaderboard.innerHTML = state.richLeaderboard
+  els.richLeaderboard.innerHTML = list
     .map((row) => {
+      const risk = Number.isFinite(row.riskScore) ? row.riskScore : null;
+      const riskLabel = row.riskLabel ? String(row.riskLabel) : "";
+      const riskText = risk != null
+        ? ` • Risk ${risk}${riskLabel ? ` (${riskLabel})` : ""}`
+        : "";
       return `
         <div class="leader-row">
           <div class="leader-rank">${row.rank || "-"}</div>
           <div>
             <div>${escapeHtml(row.name || "Ẩn danh")}</div>
-            <div class="leader-meta">${formatUSD(row.equityUsd || 0)} • ${formatVND(row.equityVnd || 0)}</div>
+            <div class="leader-meta">${formatUSD(row.equityUsd || 0)} • ${formatVND(row.equityVnd || 0)}${riskText}</div>
           </div>
           <div></div>
         </div>
@@ -4763,6 +4835,409 @@ const TIP_QUIZ = {
   ]
 };
 
+const CANDLE_LIBRARY = [
+  {
+    id: "bullish-candle",
+    en: "Bullish Candle",
+    vi: "Nến tăng",
+    recognize: "Thân nến đóng cao hơn mở, màu xanh, râu trên dưới cân hoặc ngắn.",
+    forming: "Thường xuất hiện khi lực mua chiếm ưu thế sau giai đoạn đi ngang hoặc hồi nhẹ.",
+    predict: "Gợi ý đà tăng tiếp diễn, mạnh hơn khi phá vùng kháng cự."
+  },
+  {
+    id: "bearish-candle",
+    en: "Bearish Candle",
+    vi: "Nến giảm",
+    recognize: "Thân nến đóng thấp hơn mở, màu đỏ, râu trên dưới cân hoặc ngắn.",
+    forming: "Hay xuất hiện khi lực bán chiếm ưu thế sau nhịp tăng hoặc tại kháng cự.",
+    predict: "Gợi ý đà giảm hoặc chững lại, cần nến xác nhận tiếp theo."
+  },
+  {
+    id: "long-bullish",
+    en: "Long Bullish Candle",
+    vi: "Nến tăng dài",
+    recognize: "Thân nến rất dài, râu ngắn, đóng gần đỉnh.",
+    forming: "Thường xuất hiện sau pha tích lũy hoặc tin tức tích cực.",
+    predict: "Thể hiện lực mua mạnh, nhưng dễ có nhịp điều chỉnh ngắn."
+  },
+  {
+    id: "long-bearish",
+    en: "Long Bearish Candle",
+    vi: "Nến giảm dài",
+    recognize: "Thân nến rất dài, râu ngắn, đóng gần đáy.",
+    forming: "Hay xuất hiện sau nhịp tăng nóng hoặc phá vỡ hỗ trợ.",
+    predict: "Thể hiện lực bán mạnh, có thể kéo dài xu hướng giảm."
+  },
+  {
+    id: "marubozu",
+    en: "Marubozu (Bull / Bear)",
+    vi: "Nến Marubozu (tăng/giảm)",
+    recognize: "Hầu như không có râu, thân nến chiếm toàn bộ biên độ.",
+    forming: "Hình thành khi bên mua hoặc bán kiểm soát hoàn toàn phiên.",
+    predict: "Tín hiệu mạnh theo hướng nến, ưu tiên đi theo xu hướng."
+  },
+  {
+    id: "doji",
+    en: "Doji",
+    vi: "Nến Doji",
+    recognize: "Giá mở và đóng gần như bằng nhau, thân rất nhỏ.",
+    forming: "Xảy ra khi cung cầu cân bằng, do dự.",
+    predict: "Tín hiệu lưỡng lự, cần nến xác nhận trước khi vào lệnh."
+  },
+  {
+    id: "long-legged-doji",
+    en: "Long-Legged Doji",
+    vi: "Doji chân dài",
+    recognize: "Thân nhỏ, râu trên và dưới rất dài.",
+    forming: "Biến động mạnh trong phiên nhưng đóng gần mở.",
+    predict: "Báo hiệu giằng co mạnh, có thể đảo chiều nếu ở vùng cực trị."
+  },
+  {
+    id: "dragonfly-doji",
+    en: "Dragonfly Doji",
+    vi: "Doji chuồn chuồn",
+    recognize: "Thân nhỏ ở gần đỉnh, râu dưới dài, râu trên rất ngắn.",
+    forming: "Giá bị bán xuống mạnh rồi kéo lại cuối phiên.",
+    predict: "Gợi ý đảo chiều tăng nếu xuất hiện sau xu hướng giảm."
+  },
+  {
+    id: "gravestone-doji",
+    en: "Gravestone Doji",
+    vi: "Doji bia mộ",
+    recognize: "Thân nhỏ ở gần đáy, râu trên dài, râu dưới rất ngắn.",
+    forming: "Giá bị kéo lên cao rồi bị bán xuống mạnh cuối phiên.",
+    predict: "Gợi ý đảo chiều giảm nếu xuất hiện sau xu hướng tăng."
+  },
+  {
+    id: "hammer",
+    en: "Hammer",
+    vi: "Nến búa",
+    recognize: "Thân nhỏ, râu dưới dài gấp 2-3 lần thân, râu trên ngắn.",
+    forming: "Thường xuất hiện sau xu hướng giảm.",
+    predict: "Tín hiệu đảo chiều tăng, cần nến xác nhận tăng tiếp."
+  },
+  {
+    id: "inverted-hammer",
+    en: "Inverted Hammer",
+    vi: "Nến búa ngược",
+    recognize: "Thân nhỏ, râu trên dài, râu dưới ngắn.",
+    forming: "Thường xuất hiện sau xu hướng giảm khi lực mua thử kéo giá lên.",
+    predict: "Có thể đảo chiều tăng, chờ nến xác nhận."
+  },
+  {
+    id: "shooting-star",
+    en: "Shooting Star",
+    vi: "Nến sao băng",
+    recognize: "Thân nhỏ, râu trên dài, râu dưới ngắn.",
+    forming: "Thường xuất hiện sau xu hướng tăng khi lực bán xuất hiện.",
+    predict: "Gợi ý đảo chiều giảm, cần nến giảm xác nhận."
+  },
+  {
+    id: "bullish-engulfing",
+    en: "Bullish Engulfing",
+    vi: "Nhấn chìm tăng",
+    recognize: "Nến tăng bao trùm hoàn toàn thân nến giảm trước đó.",
+    forming: "Thường xuất hiện sau xu hướng giảm hoặc tại hỗ trợ.",
+    predict: "Tín hiệu đảo chiều tăng mạnh nếu kèm khối lượng cao."
+  },
+  {
+    id: "bearish-engulfing",
+    en: "Bearish Engulfing",
+    vi: "Nhấn chìm giảm",
+    recognize: "Nến giảm bao trùm hoàn toàn thân nến tăng trước đó.",
+    forming: "Thường xuất hiện sau xu hướng tăng hoặc tại kháng cự.",
+    predict: "Tín hiệu đảo chiều giảm mạnh, cần xác nhận."
+  },
+  {
+    id: "bullish-harami",
+    en: "Bullish Harami",
+    vi: "Harami tăng",
+    recognize: "Nến nhỏ tăng nằm trong thân nến giảm lớn trước đó.",
+    forming: "Xuất hiện sau giảm sâu, cho thấy lực bán suy yếu.",
+    predict: "Có thể đảo chiều tăng nếu nến sau xác nhận."
+  },
+  {
+    id: "bearish-harami",
+    en: "Bearish Harami",
+    vi: "Harami giảm",
+    recognize: "Nến nhỏ giảm nằm trong thân nến tăng lớn trước đó.",
+    forming: "Xuất hiện sau tăng mạnh, báo hiệu lực mua suy yếu.",
+    predict: "Có thể đảo chiều giảm khi có nến xác nhận."
+  },
+  {
+    id: "harami-cross",
+    en: "Harami Cross",
+    vi: "Harami chữ thập",
+    recognize: "Doji nằm trong thân nến lớn trước đó.",
+    forming: "Cung cầu cân bằng đột ngột sau một nhịp mạnh.",
+    predict: "Tín hiệu đảo chiều tiềm năng, cần xác nhận."
+  },
+  {
+    id: "piercing-line",
+    en: "Piercing Line",
+    vi: "Đường xuyên thủng",
+    recognize: "Nến giảm dài rồi nến tăng đóng trên 50% thân nến trước.",
+    forming: "Xuất hiện sau xu hướng giảm.",
+    predict: "Gợi ý đảo chiều tăng, mạnh hơn nếu phá kháng cự gần."
+  },
+  {
+    id: "dark-cloud-cover",
+    en: "Dark Cloud Cover",
+    vi: "Mây đen che phủ",
+    recognize: "Nến tăng dài rồi nến giảm đóng dưới 50% thân nến trước.",
+    forming: "Xuất hiện sau xu hướng tăng.",
+    predict: "Gợi ý đảo chiều giảm, cần nến giảm xác nhận."
+  },
+  {
+    id: "tweezer-bottom",
+    en: "Tweezer Bottom",
+    vi: "Nhíp đáy",
+    recognize: "Hai nến liên tiếp có đáy gần bằng nhau.",
+    forming: "Thường xuất hiện sau giảm mạnh tại vùng hỗ trợ.",
+    predict: "Gợi ý đảo chiều tăng, chờ nến xác nhận."
+  },
+  {
+    id: "tweezer-top",
+    en: "Tweezer Top",
+    vi: "Nhíp đỉnh",
+    recognize: "Hai nến liên tiếp có đỉnh gần bằng nhau.",
+    forming: "Thường xuất hiện sau tăng mạnh tại vùng kháng cự.",
+    predict: "Gợi ý đảo chiều giảm, chờ nến xác nhận."
+  },
+  {
+    id: "matching-low",
+    en: "Matching Low",
+    vi: "Đáy bằng",
+    recognize: "Hai nến giảm đóng gần như cùng mức đáy.",
+    forming: "Xuất hiện trong xu hướng giảm nhưng lực bán suy yếu.",
+    predict: "Báo hiệu chững lại hoặc đảo chiều nhẹ."
+  },
+  {
+    id: "matching-high",
+    en: "Matching High",
+    vi: "Đỉnh bằng",
+    recognize: "Hai nến tăng đóng gần như cùng mức đỉnh.",
+    forming: "Xuất hiện trong xu hướng tăng khi lực mua suy yếu.",
+    predict: "Báo hiệu chững lại hoặc đảo chiều nhẹ."
+  },
+  {
+    id: "counterattack-bull",
+    en: "Counterattack (Bullish)",
+    vi: "Phản công tăng",
+    recognize: "Nến giảm mạnh rồi nến tăng đóng gần bằng giá đóng trước.",
+    forming: "Cầu phản ứng mạnh sau cú giảm.",
+    predict: "Khả năng đảo chiều tăng nếu nến sau tiếp tục tăng."
+  },
+  {
+    id: "counterattack-bear",
+    en: "Counterattack (Bearish)",
+    vi: "Phản công giảm",
+    recognize: "Nến tăng mạnh rồi nến giảm đóng gần bằng giá đóng trước.",
+    forming: "Cung phản ứng mạnh sau cú tăng.",
+    predict: "Khả năng đảo chiều giảm nếu nến sau tiếp tục giảm."
+  },
+  {
+    id: "kicking-pattern",
+    en: "Kicking Pattern",
+    vi: "Kicking (Đá bật)",
+    recognize: "Hai nến Marubozu đối màu với gap mạnh.",
+    forming: "Xuất hiện khi tâm lý đổi chiều rất nhanh.",
+    predict: "Tín hiệu đảo chiều rất mạnh, ít khi thất bại."
+  },
+  {
+    id: "morning-star",
+    en: "Morning Star",
+    vi: "Sao mai",
+    recognize: "Nến giảm dài, nến nhỏ, rồi nến tăng mạnh.",
+    forming: "Xuất hiện sau xu hướng giảm.",
+    predict: "Tín hiệu đảo chiều tăng, đáng tin nếu nến 3 đóng cao."
+  },
+  {
+    id: "evening-star",
+    en: "Evening Star",
+    vi: "Sao hôm",
+    recognize: "Nến tăng dài, nến nhỏ, rồi nến giảm mạnh.",
+    forming: "Xuất hiện sau xu hướng tăng.",
+    predict: "Tín hiệu đảo chiều giảm, cần xác nhận phá hỗ trợ."
+  },
+  {
+    id: "morning-doji-star",
+    en: "Morning Doji Star",
+    vi: "Sao mai Doji",
+    recognize: "Nến giảm dài, Doji, rồi nến tăng mạnh.",
+    forming: "Sau xu hướng giảm, doji cho thấy lực bán cạn.",
+    predict: "Đảo chiều tăng mạnh hơn Morning Star thường."
+  },
+  {
+    id: "evening-doji-star",
+    en: "Evening Doji Star",
+    vi: "Sao hôm Doji",
+    recognize: "Nến tăng dài, Doji, rồi nến giảm mạnh.",
+    forming: "Sau xu hướng tăng, doji báo lực mua yếu.",
+    predict: "Đảo chiều giảm mạnh hơn Evening Star thường."
+  },
+  {
+    id: "three-white-soldiers",
+    en: "Three White Soldiers",
+    vi: "Ba chàng lính trắng",
+    recognize: "Ba nến tăng dài liên tiếp, đóng gần đỉnh.",
+    forming: "Sau xu hướng giảm hoặc tích lũy.",
+    predict: "Xác nhận xu hướng tăng, tránh mua đuổi quá cao."
+  },
+  {
+    id: "three-black-crows",
+    en: "Three Black Crows",
+    vi: "Ba con quạ đen",
+    recognize: "Ba nến giảm dài liên tiếp, đóng gần đáy.",
+    forming: "Sau xu hướng tăng hoặc vùng phân phối.",
+    predict: "Xác nhận xu hướng giảm, ưu tiên giảm rủi ro."
+  },
+  {
+    id: "three-inside-up",
+    en: "Three Inside Up",
+    vi: "Ba nến trong tăng",
+    recognize: "Harami tăng, sau đó nến tăng đóng vượt đỉnh nến đầu.",
+    forming: "Sau xu hướng giảm, lực mua dần chiếm ưu thế.",
+    predict: "Xác nhận đảo chiều tăng khi nến 3 mạnh."
+  },
+  {
+    id: "three-inside-down",
+    en: "Three Inside Down",
+    vi: "Ba nến trong giảm",
+    recognize: "Harami giảm, sau đó nến giảm đóng dưới đáy nến đầu.",
+    forming: "Sau xu hướng tăng, lực bán dần chiếm ưu thế.",
+    predict: "Xác nhận đảo chiều giảm khi nến 3 mạnh."
+  },
+  {
+    id: "three-outside-up",
+    en: "Three Outside Up",
+    vi: "Ba nến ngoài tăng",
+    recognize: "Engulfing tăng, sau đó nến tăng xác nhận.",
+    forming: "Sau xu hướng giảm, lực mua bùng nổ.",
+    predict: "Đảo chiều tăng mạnh, có thể vào sau nến xác nhận."
+  },
+  {
+    id: "three-outside-down",
+    en: "Three Outside Down",
+    vi: "Ba nến ngoài giảm",
+    recognize: "Engulfing giảm, sau đó nến giảm xác nhận.",
+    forming: "Sau xu hướng tăng, lực bán bùng nổ.",
+    predict: "Đảo chiều giảm mạnh, ưu tiên quản trị rủi ro."
+  },
+  {
+    id: "abandoned-baby-bull",
+    en: "Abandoned Baby (Bullish)",
+    vi: "Em bé bị bỏ rơi tăng",
+    recognize: "Nến giảm, Doji gap xuống, rồi nến tăng gap lên.",
+    forming: "Gap rõ rệt tạo khoảng trống, thường hiếm gặp.",
+    predict: "Tín hiệu đảo chiều tăng rất mạnh."
+  },
+  {
+    id: "abandoned-baby-bear",
+    en: "Abandoned Baby (Bearish)",
+    vi: "Em bé bị bỏ rơi giảm",
+    recognize: "Nến tăng, Doji gap lên, rồi nến giảm gap xuống.",
+    forming: "Gap rõ rệt tạo khoảng trống, thường hiếm gặp.",
+    predict: "Tín hiệu đảo chiều giảm rất mạnh."
+  },
+  {
+    id: "stick-sandwich",
+    en: "Stick Sandwich",
+    vi: "Bánh kẹp nến",
+    recognize: "Nến giảm, nến tăng, rồi nến giảm đóng gần giá đóng nến đầu.",
+    forming: "Xuất hiện trong xu hướng giảm, lực bán và mua giằng co.",
+    predict: "Gợi ý đảo chiều tăng ngắn hạn."
+  },
+  {
+    id: "advance-block",
+    en: "Advance Block",
+    vi: "Khối tiến",
+    recognize: "Ba nến tăng liên tiếp nhưng thân nến nhỏ dần.",
+    forming: "Xuất hiện sau xu hướng tăng, lực mua suy yếu.",
+    predict: "Báo hiệu chững lại hoặc đảo chiều giảm."
+  },
+  {
+    id: "deliberation",
+    en: "Deliberation",
+    vi: "Lưỡng lự",
+    recognize: "Hai nến tăng dài rồi nến tăng nhỏ hoặc doji.",
+    forming: "Sau xu hướng tăng, lực mua bắt đầu chậm lại.",
+    predict: "Gợi ý đảo chiều hoặc điều chỉnh nhẹ."
+  },
+  {
+    id: "unique-three-river-bottom",
+    en: "Unique Three River Bottom",
+    vi: "Ba dòng sông độc đáo (đáy)",
+    recognize: "Chuỗi 3 nến tạo đáy thấp dần rồi phục hồi nhẹ.",
+    forming: "Thường sau xu hướng giảm kéo dài.",
+    predict: "Gợi ý đảo chiều tăng nếu giá phá đỉnh gần."
+  },
+  {
+    id: "rising-three-methods",
+    en: "Rising Three Methods",
+    vi: "Ba phương pháp tăng",
+    recognize: "Nến tăng dài, 3 nến giảm nhỏ nằm trong, rồi nến tăng dài.",
+    forming: "Xuất hiện trong xu hướng tăng mạnh.",
+    predict: "Mẫu tiếp diễn tăng, ưu tiên theo xu hướng."
+  },
+  {
+    id: "falling-three-methods",
+    en: "Falling Three Methods",
+    vi: "Ba phương pháp giảm",
+    recognize: "Nến giảm dài, 3 nến tăng nhỏ nằm trong, rồi nến giảm dài.",
+    forming: "Xuất hiện trong xu hướng giảm mạnh.",
+    predict: "Mẫu tiếp diễn giảm, ưu tiên theo xu hướng."
+  },
+  {
+    id: "separating-lines-bull",
+    en: "Separating Lines (Bullish)",
+    vi: "Đường tách tăng",
+    recognize: "Hai nến mở cùng mức, nến sau tăng mạnh.",
+    forming: "Xuất hiện trong xu hướng tăng, tạm nghỉ rồi tiếp tục.",
+    predict: "Tín hiệu tiếp diễn tăng."
+  },
+  {
+    id: "separating-lines-bear",
+    en: "Separating Lines (Bearish)",
+    vi: "Đường tách giảm",
+    recognize: "Hai nến mở cùng mức, nến sau giảm mạnh.",
+    forming: "Xuất hiện trong xu hướng giảm, tạm nghỉ rồi tiếp tục.",
+    predict: "Tín hiệu tiếp diễn giảm."
+  },
+  {
+    id: "upside-tasuki-gap",
+    en: "Upside Tasuki Gap",
+    vi: "Khoảng trống Tasuki tăng",
+    recognize: "Hai nến tăng tạo gap, nến thứ ba giảm nhưng không lấp gap.",
+    forming: "Trong xu hướng tăng, gap cho thấy lực mua mạnh.",
+    predict: "Tín hiệu tiếp diễn tăng."
+  },
+  {
+    id: "downside-tasuki-gap",
+    en: "Downside Tasuki Gap",
+    vi: "Khoảng trống Tasuki giảm",
+    recognize: "Hai nến giảm tạo gap, nến thứ ba tăng nhưng không lấp gap.",
+    forming: "Trong xu hướng giảm, gap cho thấy lực bán mạnh.",
+    predict: "Tín hiệu tiếp diễn giảm."
+  },
+  {
+    id: "mat-hold",
+    en: "Mat Hold",
+    vi: "Giữ chiếu (Mat Hold)",
+    recognize: "Nến tăng dài, vài nến nhỏ điều chỉnh, rồi nến tăng mạnh.",
+    forming: "Xuất hiện trong xu hướng tăng bền vững.",
+    predict: "Tín hiệu tiếp diễn tăng, độ tin cậy cao."
+  },
+  {
+    id: "ladder-bottom",
+    en: "Ladder Bottom",
+    vi: "Thang đáy",
+    recognize: "Chuỗi nến giảm liên tiếp rồi 1 nến tăng xác nhận.",
+    forming: "Xuất hiện sau xu hướng giảm kéo dài.",
+    predict: "Gợi ý đảo chiều tăng khi nến xác nhận xuất hiện."
+  }
+];
+
 let quizState = { active: false, key: "", index: 0, correct: 0 };
 
 function updateTipTimerUI() {
@@ -4857,6 +5332,626 @@ function setTipAudioEnabled(enabled) {
     els.tipAudioBtn.classList.toggle("off", !state.tipAudioEnabled);
   }
   saveLocal();
+}
+
+function renderCandleTicker() {
+  if (!els.candleTickerTrack) return;
+  const chips = CANDLE_LIBRARY.map((item) => `<span class="candle-chip">${item.en} - ${item.vi}</span>`).join("");
+  els.candleTickerTrack.innerHTML = chips + chips;
+}
+
+function loadCandleLearned() {
+  try {
+    const raw = localStorage.getItem(CANDLE_LEARN_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (Array.isArray(data)) candleLearned = new Set(data);
+  } catch {
+    // ignore
+  }
+}
+
+function saveCandleLearned() {
+  try {
+    localStorage.setItem(CANDLE_LEARN_KEY, JSON.stringify(Array.from(candleLearned)));
+  } catch {
+    // ignore
+  }
+}
+
+function getCandleQuestion(item) {
+  const name = item?.vi || item?.en || "mẫu nến";
+  return `Nến ${name} thường báo hiệu điều gì?`;
+}
+
+function updateCandleGuideProgress(filteredCount = null) {
+  const total = CANDLE_LIBRARY.length;
+  const learnedCount = candleLearned.size;
+  if (els.candleGuideProgressFill) {
+    const pct = total ? Math.min(100, Math.max(0, (learnedCount / total) * 100)) : 0;
+    els.candleGuideProgressFill.style.width = `${pct.toFixed(1)}%`;
+  }
+  if (els.candleGuideCount) {
+    const filterText = Number.isFinite(filteredCount) && filteredCount !== total
+      ? ` • ${filteredCount} kết quả`
+      : "";
+    els.candleGuideCount.textContent = `Đã hiểu ${learnedCount}/${total}${filterText}`;
+  }
+}
+
+function toggleCandleLearned(id) {
+  if (!id) return;
+  if (candleLearned.has(id)) candleLearned.delete(id);
+  else candleLearned.add(id);
+  saveCandleLearned();
+  if (candleLearned.size === CANDLE_LIBRARY.length) {
+    addLessonHistory("Hoàn thành 50 mẫu nến");
+    addXp(80);
+    showToast("Hoàn thành thư viện nến! +80 XP.");
+  }
+}
+
+function renderCandleGuideList(filter = "") {
+  if (!els.candleGuideList) return;
+  const key = String(filter || "").trim().toLowerCase();
+  const items = CANDLE_LIBRARY.filter((item) => {
+    if (!key) return true;
+    return item.en.toLowerCase().includes(key) || item.vi.toLowerCase().includes(key);
+  });
+  updateCandleGuideProgress(items.length);
+  if (!items.length) {
+    els.candleGuideList.innerHTML = "<div class=\"candle-guide-empty\">Không tìm thấy mẫu nến phù hợp.</div>";
+    return;
+  }
+  els.candleGuideList.innerHTML = items
+    .map((item) => `
+      <div class="candle-guide-item ${candleLearned.has(item.id) ? "learned" : ""}" data-candle-id="${item.id}">
+        <div class="candle-guide-header">
+          <div><strong>${item.en}</strong> - ${item.vi}</div>
+          <button class="candle-guide-mark ${candleLearned.has(item.id) ? "done" : ""}" data-candle-mark="${item.id}" type="button">
+            ${candleLearned.has(item.id) ? "Đã hiểu" : "Đánh dấu đã hiểu"}
+          </button>
+        </div>
+        <div class="candle-guide-row"><span>Nhận biết:</span>${item.recognize}</div>
+        <div class="candle-guide-row"><span>Dấu hiệu hình thành:</span>${item.forming}</div>
+        <div class="candle-guide-row"><span>Dự đoán/ứng dụng:</span>${item.predict}</div>
+        <div class="candle-guide-row"><span>Câu hỏi:</span>${getCandleQuestion(item)}</div>
+      </div>
+    `)
+    .join("");
+}
+
+function openCandleGuide() {
+  if (!els.candleGuideOverlay) return;
+  renderCandleGuideList(els.candleGuideSearch ? els.candleGuideSearch.value : "");
+  els.candleGuideOverlay.classList.remove("hidden");
+  els.candleGuideOverlay.setAttribute("aria-hidden", "false");
+  requestAnimationFrame(() => els.candleGuideOverlay.classList.add("show"));
+  document.body.classList.add("candle-guide-open");
+}
+
+function closeCandleGuide() {
+  if (!els.candleGuideOverlay) return;
+  els.candleGuideOverlay.classList.remove("show");
+  els.candleGuideOverlay.setAttribute("aria-hidden", "true");
+  setTimeout(() => els.candleGuideOverlay.classList.add("hidden"), 200);
+  document.body.classList.remove("candle-guide-open");
+}
+
+function initCandleGuide() {
+  loadCandleLearned();
+  updateCandleGuideProgress();
+  if (els.candleGuideBtn) {
+    els.candleGuideBtn.addEventListener("click", () => {
+      openCandleGuide();
+    });
+  }
+  if (els.candleGuideClose) {
+    els.candleGuideClose.addEventListener("click", () => {
+      closeCandleGuide();
+    });
+  }
+  if (els.candleGuideOverlay) {
+    els.candleGuideOverlay.addEventListener("click", (e) => {
+      if (e.target === els.candleGuideOverlay) closeCandleGuide();
+    });
+  }
+  if (els.candleGuideSearch) {
+    els.candleGuideSearch.addEventListener("input", (e) => {
+      renderCandleGuideList(e.target.value);
+    });
+  }
+  if (els.candleGuideList) {
+    els.candleGuideList.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-candle-mark]");
+      if (!btn) return;
+      const id = btn.getAttribute("data-candle-mark");
+      if (!id) return;
+      toggleCandleLearned(id);
+      renderCandleGuideList(els.candleGuideSearch ? els.candleGuideSearch.value : "");
+    });
+  }
+  if (els.candlePracticeBtn) {
+    els.candlePracticeBtn.addEventListener("click", () => openCandlePractice());
+  }
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && els.candleGuideOverlay && !els.candleGuideOverlay.classList.contains("hidden")) {
+      closeCandleGuide();
+    }
+  });
+  initCandlePractice();
+}
+
+function initCandlePractice() {
+  if (els.candlePracticeClose) {
+    els.candlePracticeClose.addEventListener("click", closeCandlePractice);
+  }
+  if (els.candlePracticeOverlay) {
+    els.candlePracticeOverlay.addEventListener("click", (e) => {
+      if (e.target === els.candlePracticeOverlay) closeCandlePractice();
+    });
+  }
+  if (els.candlePracticeNext) {
+    els.candlePracticeNext.addEventListener("click", () => {
+      renderCandlePracticeQuestion();
+    });
+  }
+  if (els.candlePracticeClaim) {
+    els.candlePracticeClaim.addEventListener("click", () => {
+      claimCandlePracticeReward();
+    });
+  }
+}
+
+function openCandlePractice() {
+  if (!els.candlePracticeOverlay) return;
+  candlePracticeState = { active: true, total: 0, correct: 0, current: null, options: [], answered: false };
+  renderCandlePracticeQuestion();
+  els.candlePracticeOverlay.classList.remove("hidden");
+  requestAnimationFrame(() => els.candlePracticeOverlay.classList.add("show"));
+  document.body.classList.add("candle-practice-open");
+}
+
+function closeCandlePractice() {
+  if (!els.candlePracticeOverlay) return;
+  els.candlePracticeOverlay.classList.remove("show");
+  setTimeout(() => els.candlePracticeOverlay.classList.add("hidden"), 200);
+  document.body.classList.remove("candle-practice-open");
+}
+
+function updateCandlePracticeScore() {
+  if (els.candlePracticeScore) {
+    els.candlePracticeScore.textContent = `${candlePracticeState.correct}/${candlePracticeState.total}`;
+  }
+  updateCandlePracticeClaim();
+}
+
+function hasClaimedCandlePracticeReward() {
+  try {
+    return localStorage.getItem(CANDLE_PRACTICE_REWARD_KEY) === getDateKey();
+  } catch {
+    return false;
+  }
+}
+
+function markCandlePracticeRewardClaimed() {
+  try {
+    localStorage.setItem(CANDLE_PRACTICE_REWARD_KEY, getDateKey());
+  } catch {
+    // ignore
+  }
+}
+
+function updateCandlePracticeClaim() {
+  if (!els.candlePracticeClaim) return;
+  const ratio = candlePracticeState.total > 0
+    ? candlePracticeState.correct / candlePracticeState.total
+    : 0;
+  const eligible = candlePracticeState.total >= CANDLE_PRACTICE_MIN_QUESTIONS
+    && ratio >= CANDLE_PRACTICE_MIN_SCORE
+    && !hasClaimedCandlePracticeReward();
+  els.candlePracticeClaim.disabled = !eligible;
+}
+
+function claimCandlePracticeReward() {
+  if (hasClaimedCandlePracticeReward()) {
+    showToast("Bạn đã nhận thưởng hôm nay.");
+    return;
+  }
+  const ratio = candlePracticeState.total > 0
+    ? candlePracticeState.correct / candlePracticeState.total
+    : 0;
+  if (candlePracticeState.total < CANDLE_PRACTICE_MIN_QUESTIONS || ratio < CANDLE_PRACTICE_MIN_SCORE) {
+    showToast("Cần trả lời đúng nhiều hơn để nhận thưởng.");
+    return;
+  }
+  addXp(CANDLE_PRACTICE_REWARD_XP);
+  state.boosters.insurance = (Number(state.boosters.insurance) || 0) + CANDLE_PRACTICE_REWARD_INSURANCE;
+  renderBoosters();
+  saveLocal();
+  markCandlePracticeRewardClaimed();
+  showToast(`Nhận thưởng luyện tập: +${CANDLE_PRACTICE_REWARD_XP} XP +${CANDLE_PRACTICE_REWARD_INSURANCE} thẻ bảo hiểm.`);
+  updateCandlePracticeClaim();
+}
+
+function pickCandleOptions(correctId) {
+  const pool = CANDLE_LIBRARY.filter((item) => item.id !== correctId);
+  const options = [CANDLE_LIBRARY.find((item) => item.id === correctId)];
+  while (options.length < 4 && pool.length) {
+    const idx = Math.floor(Math.random() * pool.length);
+    options.push(pool.splice(idx, 1)[0]);
+  }
+  return options
+    .filter(Boolean)
+    .sort(() => Math.random() - 0.5);
+}
+
+function renderCandlePracticeQuestion() {
+  if (!els.candlePracticeOptions || !els.candlePracticeQuestion) return;
+  const item = CANDLE_LIBRARY[Math.floor(Math.random() * CANDLE_LIBRARY.length)];
+  candlePracticeState.current = item;
+  candlePracticeState.options = pickCandleOptions(item.id);
+  candlePracticeState.answered = false;
+  if (els.candlePracticeQuestion) {
+    els.candlePracticeQuestion.textContent = "Mẫu nến là gì?";
+  }
+  drawCandlePractice(buildPatternCandles(item));
+  els.candlePracticeOptions.innerHTML = candlePracticeState.options
+    .map((opt) => `
+      <button class="candle-practice-option" data-candle-option="${opt.id}" type="button">
+        ${opt.en} - ${opt.vi}
+      </button>
+    `)
+    .join("");
+  els.candlePracticeOptions.querySelectorAll("button").forEach((btn) => {
+    btn.addEventListener("click", () => handleCandlePracticeAnswer(btn.getAttribute("data-candle-option")));
+  });
+  updateCandlePracticeScore();
+}
+
+function handleCandlePracticeAnswer(id) {
+  if (candlePracticeState.answered || !candlePracticeState.current) return;
+  candlePracticeState.answered = true;
+  candlePracticeState.total += 1;
+  const correct = id === candlePracticeState.current.id;
+  if (correct) candlePracticeState.correct += 1;
+  const buttons = Array.from(els.candlePracticeOptions.querySelectorAll("button"));
+  buttons.forEach((btn) => {
+    const optId = btn.getAttribute("data-candle-option");
+    if (optId === candlePracticeState.current.id) btn.classList.add("correct");
+    else if (optId === id) btn.classList.add("wrong");
+    btn.disabled = true;
+  });
+  showToast(correct ? "Chính xác!" : "Chưa đúng, xem lại mẫu nến.");
+  updateCandlePracticeScore();
+}
+
+function drawCandlePractice(candles) {
+  if (!els.candlePracticeCanvas) return;
+  const canvas = els.candlePracticeCanvas;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "rgba(8, 12, 20, 0.85)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (!candles || candles.length === 0) return;
+  const min = Math.min(...candles.map((c) => c.low));
+  const max = Math.max(...candles.map((c) => c.high));
+  const range = max - min || 1;
+  const padding = 20;
+  const width = canvas.width - padding * 2;
+  const height = canvas.height - padding * 2;
+  const step = width / candles.length;
+  const bodyW = Math.max(6, Math.min(22, step * 0.6));
+
+  ctx.strokeStyle = "rgba(255,255,255,0.1)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i += 1) {
+    const y = padding + (height / 4) * i;
+    ctx.beginPath();
+    ctx.moveTo(padding, y);
+    ctx.lineTo(canvas.width - padding, y);
+    ctx.stroke();
+  }
+
+  candles.forEach((candle, idx) => {
+    const x = padding + step * idx + step / 2;
+    const yHigh = padding + ((max - candle.high) / range) * height;
+    const yLow = padding + ((max - candle.low) / range) * height;
+    const yOpen = padding + ((max - candle.open) / range) * height;
+    const yClose = padding + ((max - candle.close) / range) * height;
+    const up = candle.close >= candle.open;
+    const color = up ? "rgba(72, 233, 195, 0.9)" : "rgba(255, 102, 128, 0.9)";
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, yHigh);
+    ctx.lineTo(x, yLow);
+    ctx.stroke();
+    const rectY = Math.min(yOpen, yClose);
+    const rectH = Math.max(2, Math.abs(yClose - yOpen));
+    ctx.fillStyle = color;
+    ctx.fillRect(x - bodyW / 2, rectY, bodyW, rectH);
+  });
+}
+
+function makeCandle(open, close, wickUp = 2, wickDown = 2) {
+  const high = Math.max(open, close) + wickUp;
+  const low = Math.min(open, close) - wickDown;
+  return { open, close, high, low };
+}
+
+function buildPatternCandles(item) {
+  const id = item?.id || "";
+  const base = 100;
+  const long = 12;
+  const med = 7;
+  const small = 3;
+  const tiny = 1;
+  const up = (open, body = med, wickUp = 2, wickDown = 2) => makeCandle(open, open + body, wickUp, wickDown);
+  const down = (open, body = med, wickUp = 2, wickDown = 2) => makeCandle(open, open - body, wickUp, wickDown);
+  const doji = (open, wick = 6) => makeCandle(open, open + (Math.random() - 0.5) * 0.4, wick * 0.6, wick * 0.6);
+
+  switch (id) {
+    case "bullish-candle":
+      return [up(base, med)];
+    case "bearish-candle":
+      return [down(base, med)];
+    case "long-bullish":
+      return [up(base, long, 2, 1.5)];
+    case "long-bearish":
+      return [down(base, long, 2, 1.5)];
+    case "marubozu": {
+      const bullish = Math.random() > 0.5;
+      return [bullish ? up(base, long, 0.2, 0.2) : down(base, long, 0.2, 0.2)];
+    }
+    case "doji":
+      return [doji(base, 8)];
+    case "long-legged-doji":
+      return [doji(base, 12)];
+    case "dragonfly-doji":
+      return [makeCandle(base + 4, base + 4.2, 0.4, 8)];
+    case "gravestone-doji":
+      return [makeCandle(base - 4, base - 3.8, 8, 0.4)];
+    case "hammer":
+      return [makeCandle(base, base + 2, 1, 7)];
+    case "inverted-hammer":
+      return [makeCandle(base, base + 2, 7, 1)];
+    case "shooting-star":
+      return [makeCandle(base + 2, base, 7, 1)];
+    case "bullish-engulfing": {
+      const c1 = down(base + 3, small, 2, 2);
+      const c2 = makeCandle(c1.close - 2, c1.open + 4, 2, 2);
+      return [c1, c2];
+    }
+    case "bearish-engulfing": {
+      const c1 = up(base - 3, small, 2, 2);
+      const c2 = makeCandle(c1.close + 2, c1.open - 4, 2, 2);
+      return [c1, c2];
+    }
+    case "bullish-harami": {
+      const c1 = down(base + 4, long, 2, 2);
+      const c2 = up(c1.close + 2, small, 1.5, 1.5);
+      return [c1, c2];
+    }
+    case "bearish-harami": {
+      const c1 = up(base - 4, long, 2, 2);
+      const c2 = down(c1.close - 2, small, 1.5, 1.5);
+      return [c1, c2];
+    }
+    case "harami-cross": {
+      const c1 = up(base - 4, long, 2, 2);
+      const c2 = doji(c1.close - 2, 6);
+      return [c1, c2];
+    }
+    case "piercing-line": {
+      const c1 = down(base + 5, long, 2, 2);
+      const midpoint = (c1.open + c1.close) / 2;
+      const c2 = makeCandle(c1.close - 2, midpoint + 2, 2, 2);
+      return [c1, c2];
+    }
+    case "dark-cloud-cover": {
+      const c1 = up(base - 5, long, 2, 2);
+      const midpoint = (c1.open + c1.close) / 2;
+      const c2 = makeCandle(c1.close + 2, midpoint - 2, 2, 2);
+      return [c1, c2];
+    }
+    case "tweezer-bottom": {
+      const c1 = down(base + 5, med, 2, 6);
+      const c2 = up(base - 2, med, 2, 6);
+      c2.low = c1.low;
+      return [c1, c2];
+    }
+    case "tweezer-top": {
+      const c1 = up(base - 5, med, 6, 2);
+      const c2 = down(base + 2, med, 6, 2);
+      c2.high = c1.high;
+      return [c1, c2];
+    }
+    case "matching-low": {
+      const c1 = down(base + 4, med, 2, 2);
+      const c2 = down(c1.close + 2, small, 2, 2);
+      c2.close = c1.close;
+      return [c1, c2];
+    }
+    case "matching-high": {
+      const c1 = up(base - 4, med, 2, 2);
+      const c2 = up(c1.close - 2, small, 2, 2);
+      c2.close = c1.close;
+      return [c1, c2];
+    }
+    case "counterattack-bullish": {
+      const c1 = down(base + 5, long, 2, 2);
+      const c2 = up(c1.close, long, 2, 2);
+      return [c1, c2];
+    }
+    case "counterattack-bearish": {
+      const c1 = up(base - 5, long, 2, 2);
+      const c2 = down(c1.close, long, 2, 2);
+      return [c1, c2];
+    }
+    case "kicking-pattern": {
+      const c1 = down(base + 6, long, 0.5, 0.5);
+      const c2 = up(c1.close - 6, long, 0.5, 0.5);
+      return [c1, c2];
+    }
+    case "morning-star": {
+      const c1 = down(base + 6, long, 2, 2);
+      const c2 = doji(c1.close + 2, 5);
+      const c3 = up(c2.close + 2, long, 2, 2);
+      return [c1, c2, c3];
+    }
+    case "evening-star": {
+      const c1 = up(base - 6, long, 2, 2);
+      const c2 = doji(c1.close - 2, 5);
+      const c3 = down(c2.close - 2, long, 2, 2);
+      return [c1, c2, c3];
+    }
+    case "morning-doji-star": {
+      const c1 = down(base + 6, long, 2, 2);
+      const c2 = doji(c1.close + 2, 6);
+      const c3 = up(c2.close + 2, long, 2, 2);
+      return [c1, c2, c3];
+    }
+    case "evening-doji-star": {
+      const c1 = up(base - 6, long, 2, 2);
+      const c2 = doji(c1.close - 2, 6);
+      const c3 = down(c2.close - 2, long, 2, 2);
+      return [c1, c2, c3];
+    }
+    case "three-white-soldiers": {
+      const c1 = up(base - 6, med, 2, 2);
+      const c2 = up(c1.close - 2, med, 2, 2);
+      const c3 = up(c2.close - 2, med, 2, 2);
+      return [c1, c2, c3];
+    }
+    case "three-black-crows": {
+      const c1 = down(base + 6, med, 2, 2);
+      const c2 = down(c1.close + 2, med, 2, 2);
+      const c3 = down(c2.close + 2, med, 2, 2);
+      return [c1, c2, c3];
+    }
+    case "three-inside-up": {
+      const c1 = down(base + 6, long, 2, 2);
+      const c2 = up(c1.close + 2, small, 1, 1);
+      const c3 = up(c2.close + 2, med, 2, 2);
+      return [c1, c2, c3];
+    }
+    case "three-inside-down": {
+      const c1 = up(base - 6, long, 2, 2);
+      const c2 = down(c1.close - 2, small, 1, 1);
+      const c3 = down(c2.close - 2, med, 2, 2);
+      return [c1, c2, c3];
+    }
+    case "three-outside-up": {
+      const c1 = down(base + 3, small, 2, 2);
+      const c2 = up(c1.close - 2, long, 2, 2);
+      const c3 = up(c2.close - 2, med, 2, 2);
+      return [c1, c2, c3];
+    }
+    case "three-outside-down": {
+      const c1 = up(base - 3, small, 2, 2);
+      const c2 = down(c1.close + 2, long, 2, 2);
+      const c3 = down(c2.close + 2, med, 2, 2);
+      return [c1, c2, c3];
+    }
+    case "abandoned-baby-bullish": {
+      const c1 = down(base + 6, long, 2, 2);
+      const c2 = doji(c1.close - 4, 6);
+      const c3 = up(c2.close + 6, long, 2, 2);
+      return [c1, c2, c3];
+    }
+    case "abandoned-baby-bearish": {
+      const c1 = up(base - 6, long, 2, 2);
+      const c2 = doji(c1.close + 4, 6);
+      const c3 = down(c2.close - 6, long, 2, 2);
+      return [c1, c2, c3];
+    }
+    case "stick-sandwich": {
+      const c1 = down(base + 6, med, 2, 2);
+      const c2 = up(c1.close + 4, small, 1, 1);
+      const c3 = down(c2.close + 4, med, 2, 2);
+      c3.close = c1.close;
+      return [c1, c2, c3];
+    }
+    case "advance-block": {
+      const c1 = up(base - 6, long, 2, 2);
+      const c2 = up(c1.close - 2, med, 2, 2);
+      const c3 = up(c2.close - 1, small, 2, 2);
+      return [c1, c2, c3];
+    }
+    case "deliberation": {
+      const c1 = up(base - 6, long, 2, 2);
+      const c2 = up(c1.close - 2, med, 2, 2);
+      const c3 = doji(c2.close - 1, 4);
+      return [c1, c2, c3];
+    }
+    case "unique-three-river": {
+      const c1 = down(base + 6, long, 2, 2);
+      const c2 = up(c1.close + 3, small, 1, 3);
+      const c3 = down(c2.close + 2, small, 1, 4);
+      return [c1, c2, c3];
+    }
+    case "rising-three-methods": {
+      const c1 = up(base - 6, long, 2, 2);
+      const c2 = down(c1.close - 2, small, 1, 1);
+      const c3 = down(c2.close - 1, small, 1, 1);
+      const c4 = down(c3.close - 1, small, 1, 1);
+      const c5 = up(c4.close + 1, long, 2, 2);
+      return [c1, c2, c3, c4, c5];
+    }
+    case "falling-three-methods": {
+      const c1 = down(base + 6, long, 2, 2);
+      const c2 = up(c1.close + 2, small, 1, 1);
+      const c3 = up(c2.close + 1, small, 1, 1);
+      const c4 = up(c3.close + 1, small, 1, 1);
+      const c5 = down(c4.close - 1, long, 2, 2);
+      return [c1, c2, c3, c4, c5];
+    }
+    case "separating-lines-bullish": {
+      const c1 = down(base + 4, med, 2, 2);
+      const c2 = up(c1.open, med, 2, 2);
+      return [c1, c2];
+    }
+    case "separating-lines-bearish": {
+      const c1 = up(base - 4, med, 2, 2);
+      const c2 = down(c1.open, med, 2, 2);
+      return [c1, c2];
+    }
+    case "upside-tasuki-gap": {
+      const c1 = up(base - 6, med, 2, 2);
+      const c2 = up(c1.close + 3, med, 2, 2);
+      const c3 = down(c2.close - 1, small, 2, 2);
+      return [c1, c2, c3];
+    }
+    case "downside-tasuki-gap": {
+      const c1 = down(base + 6, med, 2, 2);
+      const c2 = down(c1.close - 3, med, 2, 2);
+      const c3 = up(c2.close + 1, small, 2, 2);
+      return [c1, c2, c3];
+    }
+    case "mat-hold": {
+      const c1 = up(base - 6, long, 2, 2);
+      const c2 = down(c1.close - 2, small, 1, 1);
+      const c3 = down(c2.close - 1, small, 1, 1);
+      const c4 = down(c3.close - 1, small, 1, 1);
+      const c5 = up(c4.close + 2, long, 2, 2);
+      return [c1, c2, c3, c4, c5];
+    }
+    case "ladder-bottom": {
+      const c1 = down(base + 6, med, 2, 2);
+      const c2 = down(c1.close + 2, med, 2, 2);
+      const c3 = down(c2.close + 2, small, 2, 2);
+      const c4 = doji(c3.close + 2, 4);
+      const c5 = up(c4.close + 2, long, 2, 2);
+      return [c1, c2, c3, c4, c5];
+    }
+    default: {
+      if (id.includes("bear") || id.includes("down")) return [down(base, med)];
+      if (id.includes("bull") || id.includes("up")) return [up(base, med)];
+      return [doji(base, 6)];
+    }
+  }
 }
 
 function playTipAudio() {
@@ -10207,6 +11302,12 @@ function bindEvents() {
       setLeaderboardPrivacy(next);
     });
   }
+  if (els.lbTabReal) {
+    els.lbTabReal.addEventListener("click", () => setRichLeaderboardMode("real"));
+  }
+  if (els.lbTabSandbox) {
+    els.lbTabSandbox.addEventListener("click", () => setRichLeaderboardMode("sandbox"));
+  }
   if (els.practiceBtn) {
     els.practiceBtn.addEventListener("click", openPractice);
   }
@@ -11979,6 +13080,8 @@ function init() {
   initChartSlots();
   initLightweightCharts();
   buildSlotSelects();
+  renderCandleTicker();
+  initCandleGuide();
   updateReplayUI();
   buildAdminCoinSelect();
   bindEvents();
@@ -11988,6 +13091,7 @@ function init() {
   renderLeaderboard();
   renderWeeklyLeaderboard();
   updateLeaderboardPrivacyUI();
+  updateRichLeaderboardTabs();
   renderRichLeaderboard();
   renderChatMessages();
   renderDailyTip();
