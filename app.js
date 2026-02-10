@@ -4130,21 +4130,6 @@ function initSocket() {
     if (!approveToken) return;
     const action = payload?.action || "HANH_DONG";
     sendAdminAction(action, { approveToken });
-    return;
-    const action = payload?.action || "Hành động";
-    const approveToken = payload?.token;
-    if (!approveToken) return;
-    if (payload?.requireOwnerCode && action !== "RESET_PASSWORD") {
-      const confirmCode = await adminPrompt({
-        title: "Ma xac nhan",
-        text: "Nhập mã xác nhận (mã sếp):",
-        type: "password"
-      });
-      if (!confirmCode) return;
-      sendAdminAction(action, { approveToken, confirmCode });
-      return;
-    }
-    sendAdminAction(action, { approveToken });
   });
   socket.on("security_alert", (payload) => {
     if (!adminState.authed) return;
