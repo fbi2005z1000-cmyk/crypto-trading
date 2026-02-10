@@ -16,6 +16,12 @@ const MAX_CANDLE_BODY_PCT_DEFAULT = 0.4;
 const CHAT_HISTORY_LIMIT = 200;
 const CHAT_RATE_WINDOW_MS = 4000;
 const CHAT_RATE_MAX = 6;
+const CHAT_SLOW_MODE_MS = 10000;
+const CHAT_REPORT_HIDE_COUNT = 3;
+const CHAT_REACT_WINDOW_MS = 3000;
+const CHAT_REACT_MAX = 8;
+const CHAT_REPORT_WINDOW_MS = 60000;
+const CHAT_REPORT_MAX = 3;
 const LEADERBOARD_LIMIT = 100;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const ADMIN_OWNER_USER = process.env.ADMIN_OWNER_USER;
@@ -201,6 +207,10 @@ const rateBuckets = new Map();
 const loginGuard = new Map();
 const chatHistory = [];
 const chatBotCooldown = new Map();
+const chatOnlineCounts = new Map();
+const chatSlowMode = new Map();
+const chatReactionUsers = new Map();
+const chatReportUsers = new Map();
 const userLocks = new Map();
 const idempotencyCache = new Map();
 const accessSessions = new Map();
@@ -1583,6 +1593,7 @@ function setSession(socket, username, accessToken = "", accessExp = 0) {
   if (!username) return;
   socketSessions.set(socket.id, username);
   sockets[username] = socket;
+  noteChatOnline(username);
   if (accessToken) {
     socket.data.accessToken = accessToken;
     socket.data.accessExp = accessExp;
@@ -1598,6 +1609,7 @@ function clearSession(socket) {
   socket.data.accessExp = 0;
   const username = socketSessions.get(socket.id);
   socketSessions.delete(socket.id);
+  if (username) noteChatOffline(username);
   if (username && sockets[username] === socket) delete sockets[username];
 }
 
@@ -2159,11 +2171,55 @@ function sanitizeChatText(text) {
     .slice(0, 280);
 }
 
+function emitChatOnline(targetSocket) {
+  const users = Array.from(chatOnlineCounts.entries())
+    .filter(([, count]) => count > 0)
+    .map(([username]) => username);
+  const payload = { users, total: users.length };
+  if (targetSocket) targetSocket.emit("chat_online", payload);
+  else io.emit("chat_online", payload);
+}
+
+function noteChatOnline(username) {
+  if (!username) return;
+  const count = (chatOnlineCounts.get(username) || 0) + 1;
+  chatOnlineCounts.set(username, count);
+  if (count === 1) emitChatOnline();
+}
+
+function noteChatOffline(username) {
+  if (!username) return;
+  const count = (chatOnlineCounts.get(username) || 0) - 1;
+  if (count <= 0) chatOnlineCounts.delete(username);
+  else chatOnlineCounts.set(username, count);
+  emitChatOnline();
+}
+
+function findChatMessage(id) {
+  const key = String(id || "");
+  if (!key) return null;
+  return chatHistory.find((m) => String(m.id) === key) || null;
+}
+
 function pushChatMessage(entry) {
   if (!entry) return;
+  if (!entry.id) entry.id = Date.now() + Math.random();
+  if (!entry.type) entry.type = entry.bot ? "bot" : "user";
+  if (!entry.reactions) entry.reactions = {};
+  if (entry.pinned == null) entry.pinned = false;
+  if (entry.reports == null) entry.reports = 0;
+  if (entry.hidden == null) entry.hidden = false;
   chatHistory.push(entry);
   if (chatHistory.length > CHAT_HISTORY_LIMIT) {
-    chatHistory.splice(0, chatHistory.length - CHAT_HISTORY_LIMIT);
+    const overflow = chatHistory.length - CHAT_HISTORY_LIMIT;
+    const removed = chatHistory.splice(0, overflow);
+    removed.forEach((m) => {
+      const key = String(m?.id || "");
+      if (key) {
+        chatReactionUsers.delete(key);
+        chatReportUsers.delete(key);
+      }
+    });
   }
   io.emit("chat_message", entry);
 }
@@ -6096,23 +6152,100 @@ io.on("connection", (socket) => {
     socket.emit("chat_history", { items: chatHistory.slice(-CHAT_HISTORY_LIMIT) });
   });
 
+  socket.on("chat_online_request", () => {
+    emitChatOnline(socket);
+  });
+
   socket.on("chat_send", (payload) => {
     const user = requireUser(socket);
     if (!user) return;
+    const slowUntil = chatSlowMode.get(user.username) || 0;
+    if (slowUntil && Date.now() < slowUntil) {
+      const remain = Math.ceil((slowUntil - Date.now()) / 1000);
+      socket.emit("chat_error", { reason: `Ban dang bi gioi han chat. Thu lai sau ${remain}s.` });
+      return;
+    }
     if (!rateLimit(`chat:${user.username}`, CHAT_RATE_MAX, CHAT_RATE_WINDOW_MS)) {
+      chatSlowMode.set(user.username, Date.now() + CHAT_SLOW_MODE_MS);
       socket.emit("chat_error", { reason: "Chat qua nhanh. Vui long thu lai." });
       return;
     }
     const text = sanitizeChatText(payload?.text);
     if (!text) return;
     const entry = {
-      id: Date.now() + Math.random(),
       user: user.username,
+      type: "user",
       text,
-      ts: Date.now()
+      ts: Date.now(),
+      reactions: {},
+      pinned: false,
+      reports: 0,
+      hidden: false
     };
     pushChatMessage(entry);
     maybeBotReply(user, text);
+  });
+
+  socket.on("chat_react", (payload) => {
+    const user = requireUser(socket);
+    if (!user) return;
+    if (!rateLimit(`chat_react:${user.username}`, CHAT_REACT_MAX, CHAT_REACT_WINDOW_MS)) {
+      socket.emit("chat_error", { reason: "Ban thao tac qua nhanh." });
+      return;
+    }
+    const id = payload?.id;
+    const emoji = String(payload?.emoji || "");
+    if (!id || !emoji) return;
+    const msg = findChatMessage(id);
+    if (!msg || msg.hidden) return;
+    const key = String(msg.id);
+    const set = chatReactionUsers.get(key) || new Set();
+    const token = `${user.username}:${emoji}`;
+    if (set.has(token)) return;
+    set.add(token);
+    chatReactionUsers.set(key, set);
+    msg.reactions = msg.reactions || {};
+    msg.reactions[emoji] = (msg.reactions[emoji] || 0) + 1;
+    io.emit("chat_message_update", { id: msg.id, reactions: msg.reactions });
+  });
+
+  socket.on("chat_report", (payload) => {
+    const user = requireUser(socket);
+    if (!user) return;
+    if (!rateLimit(`chat_report:${user.username}`, CHAT_REPORT_MAX, CHAT_REPORT_WINDOW_MS)) {
+      socket.emit("chat_error", { reason: "Ban thao tac qua nhanh." });
+      return;
+    }
+    const id = payload?.id;
+    if (!id) return;
+    const msg = findChatMessage(id);
+    if (!msg || msg.hidden) return;
+    const key = String(msg.id);
+    const set = chatReportUsers.get(key) || new Set();
+    if (set.has(user.username)) return;
+    set.add(user.username);
+    chatReportUsers.set(key, set);
+    msg.reports = (msg.reports || 0) + 1;
+    if (msg.reports >= CHAT_REPORT_HIDE_COUNT) {
+      msg.hidden = true;
+    }
+    io.emit("chat_message_update", { id: msg.id, reports: msg.reports, hidden: msg.hidden });
+  });
+
+  socket.on("chat_pin", (payload) => {
+    const user = requireUser(socket);
+    if (!user) return;
+    const id = payload?.id;
+    if (!id) return;
+    const msg = findChatMessage(id);
+    if (!msg) return;
+    if (!user.isAdmin && msg.user !== user.username) {
+      socket.emit("chat_error", { reason: "Khong du quyen ghim." });
+      return;
+    }
+    const pinned = !!payload?.pinned;
+    msg.pinned = pinned;
+    io.emit("chat_message_update", { id: msg.id, pinned });
   });
 
   socket.on("leaderboard_request", () => {

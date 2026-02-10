@@ -1973,6 +1973,210 @@ body[data-theme="light"] .tab {
   cursor: pointer;
 }
 
+.chat-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.chat-online {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+
+.chat-online-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chat-online-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 11px;
+}
+
+.chat-tool-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chat-tool-actions select,
+.chat-tool-actions button {
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.chat-tool-actions button:hover,
+.chat-tool-actions select:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.chat-pinned {
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 8px;
+  display: none;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.chat-pinned.show {
+  display: grid;
+}
+
+.chat-message-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.chat-message-actions button {
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.chat-message-actions button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.chat-reactions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chat-reactions button {
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.chat-reactions button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.chat-message.hidden {
+  opacity: 0.6;
+  font-style: italic;
+}
+
+.chat-badge {
+  margin-left: 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #ff5a5a;
+  color: #fff;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 8, 12, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+
+.chat-popup-card {
+  width: min(420px, 92vw);
+  max-height: 80vh;
+  overflow: hidden;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--stroke);
+  background: rgba(11, 15, 22, 0.95);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+}
+
+.chat-popup-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chat-popup-title {
+  font-weight: 700;
+}
+
+.chat-popup-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.chat-popup-actions button {
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.chat-popup-actions button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.chat-float-btn {
+  position: fixed;
+  right: 18px;
+  bottom: 92px;
+  z-index: 40;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: rgba(12, 16, 24, 0.9);
+  color: var(--text);
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+
+.chat-float-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 900px) {
+  .chat-float-btn {
+    bottom: 78px;
+  }
+}
+
 .tip-label {
   font-size: 11px;
   text-transform: uppercase;

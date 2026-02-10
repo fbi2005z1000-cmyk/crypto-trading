@@ -282,6 +282,10 @@ const state = {
   richLeaderboardMode: "real",
   leaderboardPrivacy: "public",
   chatMessages: [],
+  chatFilter: "all",
+  chatMuteUntil: 0,
+  chatUnread: 0,
+  chatOnline: [],
   marketFromServer: false,
   marketCollapsed: false,
   quickLetter: "",
@@ -322,6 +326,9 @@ const LESSON_HISTORY_KEY = "cta_lesson_history_v1";
 const TIP_AUDIO_KEY = "cta_tip_audio_v1";
 const TIP_QUIZ_KEY_PREFIX = "cta_tip_quiz_";
 const FOCUS_MODE_KEY = "cta_focus_mode_v1";
+const CHAT_FILTER_KEY = "cta_chat_filter_v1";
+const CHAT_MUTE_KEY = "cta_chat_mute_v1";
+const CHAT_UNREAD_KEY = "cta_chat_unread_v1";
 const CANDLE_LEARN_KEY = "cta_candle_learned_v1";
 const CANDLE_PRACTICE_REWARD_KEY = "cta_candle_practice_reward_v1";
 const CANDLE_PRACTICE_MIN_QUESTIONS = 10;
@@ -2628,6 +2635,23 @@ const els = {
   chatMessages: document.getElementById("chatMessages"),
   chatInput: document.getElementById("chatInput"),
   chatSendBtn: document.getElementById("chatSendBtn"),
+  chatPopupOpen: document.getElementById("chatPopupOpen"),
+  chatPopupToggle: document.getElementById("chatPopupToggle"),
+  chatPopupOverlay: document.getElementById("chatPopupOverlay"),
+  chatPopupClose: document.getElementById("chatPopupClose"),
+  chatPopupMessages: document.getElementById("chatPopupMessages"),
+  chatPopupInput: document.getElementById("chatPopupInput"),
+  chatPopupSendBtn: document.getElementById("chatPopupSendBtn"),
+  chatFilter: document.getElementById("chatFilter"),
+  chatMuteSelect: document.getElementById("chatMuteSelect"),
+  chatMuteBtn: document.getElementById("chatMuteBtn"),
+  chatPinned: document.getElementById("chatPinned"),
+  chatPopupPinned: document.getElementById("chatPopupPinned"),
+  chatOnlineCount: document.getElementById("chatOnlineCount"),
+  chatOnlineList: document.getElementById("chatOnlineList"),
+  chatBadge: document.getElementById("chatBadge"),
+  chatBadgeMini: document.getElementById("chatBadgeMini"),
+  panelChat: document.getElementById("panelChat"),
   tickerTrack: document.getElementById("tickerTrack"),
   newsTrack: document.getElementById("newsTrack"),
   themeToggle: document.getElementById("themeToggle"),
@@ -3551,14 +3575,23 @@ function initSocket() {
     }
   });
   socket.on("chat_history", (payload) => {
-    state.chatMessages = Array.isArray(payload?.items) ? payload.items : [];
-    renderChatMessages();
+    state.chatMessages = Array.isArray(payload?.items)
+      ? payload.items.map((m) => normalizeChatMessage(m)).filter(Boolean)
+      : [];
+    renderChatMessagesAll();
   });
   socket.on("chat_message", (payload) => {
     pushChatMessage(payload);
   });
+  socket.on("chat_message_update", (payload) => {
+    applyChatMessagePatch(payload);
+  });
   socket.on("chat_error", (payload) => {
     showToast(payload?.reason || "Không thể gửi chat.");
+  });
+  socket.on("chat_online", (payload) => {
+    state.chatOnline = Array.isArray(payload?.users) ? payload.users : [];
+    updateChatOnlineUI();
   });
   socket.on("leaderboard_update", (payload) => {
     const rowsReal = Array.isArray(payload?.rowsReal)
@@ -3630,6 +3663,7 @@ function initSocket() {
     setAuthState(payload?.username || "user");
     requestRichLeaderboard();
     socket.emit("chat_history_request");
+    socket.emit("chat_online_request");
     if (payload?.isAdmin) {
       adminState.authed = true;
       adminState.role = payload.adminRole || payload.role || "";
@@ -3648,6 +3682,7 @@ function initSocket() {
     setAuthState(payload?.username || "user");
     requestRichLeaderboard();
     socket.emit("chat_history_request");
+    socket.emit("chat_online_request");
     if (payload?.isAdmin) {
       adminState.authed = true;
       adminState.role = payload.adminRole || payload.role || "";
@@ -4569,7 +4604,207 @@ function setLeaderboardPrivacy(value) {
   if (socket) socket.emit("set_leaderboard_privacy", { value: state.leaderboardPrivacy });
 }
 
+const CHAT_EMOJIS = ["👍", "❤️", "😄"];
+
+function ensureChatBadges() {
+  if (!els.chatPopupOpen) return;
+  if (!els.chatBadgeMini) {
+    const badge = document.createElement("span");
+    badge.id = "chatBadgeMini";
+    badge.className = "chat-badge hidden";
+    badge.textContent = "0";
+    els.chatPopupOpen.appendChild(badge);
+    els.chatBadgeMini = badge;
+  }
+}
+
+function loadChatPrefs() {
+  const filter = localStorage.getItem(CHAT_FILTER_KEY) || "all";
+  state.chatFilter = ["all", "user", "bot", "system", "pinned"].includes(filter) ? filter : "all";
+  const muteUntil = parseInt(localStorage.getItem(CHAT_MUTE_KEY) || "0", 10) || 0;
+  state.chatMuteUntil = muteUntil;
+  const unread = parseInt(localStorage.getItem(CHAT_UNREAD_KEY) || "0", 10) || 0;
+  state.chatUnread = unread;
+}
+
+function saveChatPrefs() {
+  localStorage.setItem(CHAT_FILTER_KEY, state.chatFilter || "all");
+  localStorage.setItem(CHAT_MUTE_KEY, String(state.chatMuteUntil || 0));
+  localStorage.setItem(CHAT_UNREAD_KEY, String(state.chatUnread || 0));
+}
+
+function setChatFilter(value) {
+  state.chatFilter = value || "all";
+  if (els.chatFilter) els.chatFilter.value = state.chatFilter;
+  saveChatPrefs();
+  renderChatMessagesAll();
+}
+
+function isChatMuted() {
+  return Number(state.chatMuteUntil) > Date.now();
+}
+
+function setChatMute(minutes) {
+  const mins = Number(minutes) || 0;
+  if (mins <= 0) {
+    state.chatMuteUntil = 0;
+  } else {
+    state.chatMuteUntil = Date.now() + mins * 60 * 1000;
+  }
+  saveChatPrefs();
+  updateChatMuteUI();
+  renderChatMessagesAll();
+}
+
+function updateChatMuteUI() {
+  if (!els.chatMuteBtn) return;
+  if (isChatMuted()) {
+    const remain = Math.max(0, state.chatMuteUntil - Date.now());
+    const mins = Math.ceil(remain / 60000);
+    els.chatMuteBtn.textContent = `Unmute (${mins}m)`;
+    if (els.chatMuteSelect) els.chatMuteSelect.disabled = true;
+  } else {
+    els.chatMuteBtn.textContent = "Mute";
+    if (els.chatMuteSelect) els.chatMuteSelect.disabled = false;
+  }
+}
+
+function updateChatBadge() {
+  ensureChatBadges();
+  const value = Math.max(0, state.chatUnread || 0);
+  if (els.chatBadge) {
+    els.chatBadge.textContent = String(value);
+    els.chatBadge.classList.toggle("hidden", value === 0);
+  }
+  if (els.chatBadgeMini) {
+    els.chatBadgeMini.textContent = String(value);
+    els.chatBadgeMini.classList.toggle("hidden", value === 0);
+  }
+  saveChatPrefs();
+}
+
+function isChatPopupOpen() {
+  return !!(els.chatPopupOverlay && !els.chatPopupOverlay.classList.contains("hidden"));
+}
+
+function isChatPanelVisible() {
+  if (!els.panelChat) return false;
+  if (els.panelChat.classList.contains("collapsed")) return false;
+  const rect = els.panelChat.getBoundingClientRect();
+  return rect.bottom > 0 && rect.top < window.innerHeight;
+}
+
+function isChatAtBottom(target) {
+  if (!target) return false;
+  return target.scrollHeight - target.scrollTop - target.clientHeight < 24;
+}
+
+function clearChatUnread() {
+  state.chatUnread = 0;
+  updateChatBadge();
+}
+
+function bumpChatUnread() {
+  state.chatUnread = Math.min(999, (state.chatUnread || 0) + 1);
+  updateChatBadge();
+}
+
+function updateChatOnlineUI() {
+  if (!els.chatOnlineCount || !els.chatOnlineList) return;
+  const list = Array.isArray(state.chatOnline) ? state.chatOnline : [];
+  els.chatOnlineCount.textContent = String(list.length);
+  els.chatOnlineList.innerHTML = list
+    .slice(0, 12)
+    .map((name) => `<span class="chat-online-badge">${escapeHtml(name)}</span>`)
+    .join("");
+}
+
+function getFilteredChatMessages() {
+  let list = Array.isArray(state.chatMessages) ? state.chatMessages : [];
+  const filter = state.chatFilter || "all";
+  if (filter === "bot") {
+    list = list.filter((msg) => msg.bot || msg.type === "bot");
+  } else if (filter === "system") {
+    list = list.filter((msg) => msg.type === "system");
+  } else if (filter === "user") {
+    list = list.filter((msg) => !msg.bot && msg.type !== "system");
+  } else if (filter === "pinned") {
+    list = list.filter((msg) => msg.pinned);
+  }
+  return list;
+}
+
+function renderChatPinnedInto(target) {
+  if (!target) return;
+  const pinned = (state.chatMessages || []).filter((msg) => msg.pinned && !msg.hidden);
+  if (pinned.length === 0) {
+    target.classList.remove("show");
+    target.innerHTML = "";
+    return;
+  }
+  target.classList.add("show");
+  target.innerHTML = pinned
+    .slice(-3)
+    .map((msg) => {
+      const user = escapeHtml(msg.user || "Anon");
+      const text = escapeHtml(msg.text || "");
+      return `<div class="chat-message"><div class="chat-user">${user}</div><div>${text}</div></div>`;
+    })
+    .join("");
+}
+
+function renderChatMessagesInto(target) {
+  if (!target) return;
+  if (isChatMuted()) {
+    const until = new Date(state.chatMuteUntil || Date.now()).toLocaleTimeString();
+    target.innerHTML = `<div class="chat-message"><div class="chat-user">He thong</div><div>Chat dang tam tat den ${until}.</div></div>`;
+    return;
+  }
+  const list = getFilteredChatMessages();
+  if (list.length === 0) {
+    target.innerHTML = `<div class="chat-message"><div class="chat-user">Há»‡ thá»‘ng</div><div>ChÆ°a cÃ³ tin nháº¯n.</div></div>`;
+    return;
+  }
+  target.innerHTML = list
+    .slice(-200)
+    .map((msg) => {
+      const user = escapeHtml(msg.user || "áº¨n danh");
+      const text = msg.hidden
+        ? "Tin nhan da bi an do bi bao cao."
+        : escapeHtml(msg.text || "");
+      const time = formatDateTime(msg.ts || Date.now());
+      const botClass = msg.bot ? " bot" : "";
+      const userClass = msg.bot ? "chat-user bot" : "chat-user";
+      const hiddenClass = msg.hidden ? " hidden" : "";
+      const reactions = msg.reactions || {};
+      const reactionHtml = CHAT_EMOJIS.map((emoji) => {
+        const count = reactions[emoji] || 0;
+        return `<button data-chat-action="react" data-emoji="${emoji}">${emoji} ${count}</button>`;
+      }).join("");
+      const pinLabel = msg.pinned ? "Bo ghim" : "Ghim";
+      const actionsHtml = currentUser
+        ? `
+          <div class="chat-message-actions">
+            <div class="chat-reactions">${reactionHtml}</div>
+            <button data-chat-action="pin">${pinLabel}</button>
+            <button data-chat-action="report">Bao cao</button>
+          </div>`
+        : "";
+      return `
+        <div class="chat-message${botClass}${hiddenClass}" data-id="${msg.id || ""}">
+          <div class="${userClass}">${user}</div>
+          <div>${text}</div>
+          <div class="chat-time">${time}</div>
+          ${actionsHtml}
+        </div>
+      `;
+    })
+    .join("");
+  target.scrollTop = target.scrollHeight;
+}
+
 function renderChatMessages() {
+  return renderChatMessagesInto(els.chatMessages);
   if (!els.chatMessages) return;
   const list = state.chatMessages || [];
   if (list.length === 0) {
@@ -4596,22 +4831,147 @@ function renderChatMessages() {
   els.chatMessages.scrollTop = els.chatMessages.scrollHeight;
 }
 
+function renderChatMessagesAll() {
+  renderChatPinnedInto(els.chatPinned);
+  renderChatPinnedInto(els.chatPopupPinned);
+  renderChatMessagesInto(els.chatMessages);
+  renderChatMessagesInto(els.chatPopupMessages);
+  updateChatMuteUI();
+  return;
+  renderChatMessages();
+  if (!els.chatPopupMessages) return;
+  const original = els.chatMessages;
+  els.chatMessages = els.chatPopupMessages;
+  renderChatMessages();
+  els.chatMessages = original;
+}
+
+function normalizeChatMessage(msg) {
+  if (!msg) return null;
+  return {
+    id: msg.id ?? `${Date.now()}-${Math.random()}`,
+    user: msg.user || "Anon",
+    text: msg.text || "",
+    bot: !!msg.bot,
+    type: msg.type || (msg.bot ? "bot" : "user"),
+    pinned: !!msg.pinned,
+    reactions: msg.reactions || {},
+    reports: msg.reports || 0,
+    hidden: !!msg.hidden,
+    ts: msg.ts || Date.now()
+  };
+}
+
+function applyChatMessagePatch(patch) {
+  if (!patch || !patch.id) return;
+  const list = Array.isArray(state.chatMessages) ? state.chatMessages : [];
+  const target = list.find((m) => String(m.id) === String(patch.id));
+  if (!target) return;
+  if (patch.reactions) target.reactions = patch.reactions;
+  if (typeof patch.pinned === "boolean") target.pinned = patch.pinned;
+  if (typeof patch.hidden === "boolean") target.hidden = patch.hidden;
+  if (Number.isFinite(patch.reports)) target.reports = patch.reports;
+  renderChatMessagesAll();
+}
+
 function pushChatMessage(msg) {
-  if (!msg) return;
+  const entry = normalizeChatMessage(msg);
+  if (!entry) return;
   state.chatMessages = Array.isArray(state.chatMessages) ? state.chatMessages : [];
-  state.chatMessages.push(msg);
+  state.chatMessages.push(entry);
   if (state.chatMessages.length > 200) {
     state.chatMessages = state.chatMessages.slice(-200);
   }
-  renderChatMessages();
+  const visible = isChatPopupOpen()
+    || (isChatPanelVisible() && isChatAtBottom(els.chatMessages));
+  const fromSelf = currentUser && msg.user === currentUser;
+  if (!visible && !fromSelf && !isChatMuted()) {
+    bumpChatUnread();
+  } else if (visible) {
+    clearChatUnread();
+  }
+  renderChatMessagesAll();
 }
 
 function sendChatMessage() {
   if (!socket || !els.chatInput) return;
+  if (isChatMuted()) {
+    showToast("Chat đang tạm tắt.");
+    return;
+  }
   const text = (els.chatInput.value || "").trim();
   if (!text) return;
   socket.emit("chat_send", { text });
   els.chatInput.value = "";
+}
+
+function sendChatMessageFromPopup() {
+  if (!socket || !els.chatPopupInput) return;
+  if (isChatMuted()) {
+    showToast("Chat đang tạm tắt.");
+    return;
+  }
+  const text = (els.chatPopupInput.value || "").trim();
+  if (!text) return;
+  socket.emit("chat_send", { text });
+  els.chatPopupInput.value = "";
+}
+
+function openChatPopup() {
+  if (!els.chatPopupOverlay) return;
+  els.chatPopupOverlay.classList.remove("hidden");
+  els.chatPopupOverlay.setAttribute("aria-hidden", "false");
+  clearChatUnread();
+  renderChatMessagesAll();
+}
+
+function closeChatPopup() {
+  if (!els.chatPopupOverlay) return;
+  els.chatPopupOverlay.classList.add("hidden");
+  els.chatPopupOverlay.setAttribute("aria-hidden", "true");
+}
+
+function toggleChatPopup() {
+  if (!els.chatPopupOverlay) return;
+  if (els.chatPopupOverlay.classList.contains("hidden")) {
+    openChatPopup();
+  } else {
+    closeChatPopup();
+  }
+}
+
+function relocateChatPopupButton() {
+  if (!els.chatPopupOpen || !els.panelChat) return;
+  const head = els.panelChat.querySelector(".panel-head");
+  if (head && !head.contains(els.chatPopupOpen)) {
+    head.appendChild(els.chatPopupOpen);
+  }
+}
+
+function handleChatActionClick(event) {
+  const btn = event.target.closest("[data-chat-action]");
+  if (!btn || !socket) return;
+  const msgEl = btn.closest(".chat-message");
+  const id = msgEl?.dataset?.id;
+  if (!id) return;
+  const action = btn.dataset.chatAction;
+  if (action === "react") {
+    const emoji = btn.dataset.emoji || "";
+    if (!emoji) return;
+    socket.emit("chat_react", { id, emoji });
+    return;
+  }
+  if (action === "report") {
+    socket.emit("chat_report", { id });
+    showToast("Da bao cao tin nhan.");
+    return;
+  }
+  if (action === "pin") {
+    const msg = (state.chatMessages || []).find((m) => String(m.id) === String(id));
+    const next = msg ? !msg.pinned : true;
+    socket.emit("chat_pin", { id, pinned: next });
+    showToast(next ? "Da ghim tin nhan." : "Da bo ghim.");
+  }
 }
 
 function renderLessonHistory() {
@@ -11295,6 +11655,55 @@ function bindEvents() {
     els.chatInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") sendChatMessage();
     });
+    els.chatInput.addEventListener("focus", () => clearChatUnread());
+  }
+  if (els.chatMessages) {
+    els.chatMessages.addEventListener("scroll", () => {
+      if (isChatAtBottom(els.chatMessages)) clearChatUnread();
+    });
+    els.chatMessages.addEventListener("click", handleChatActionClick);
+  }
+  if (els.chatPopupMessages) {
+    els.chatPopupMessages.addEventListener("scroll", () => {
+      if (isChatAtBottom(els.chatPopupMessages)) clearChatUnread();
+    });
+    els.chatPopupMessages.addEventListener("click", handleChatActionClick);
+  }
+  if (els.chatFilter) {
+    els.chatFilter.addEventListener("change", () => setChatFilter(els.chatFilter.value || "all"));
+  }
+  if (els.chatMuteBtn) {
+    els.chatMuteBtn.addEventListener("click", () => {
+      if (isChatMuted()) {
+        setChatMute(0);
+      } else {
+        const mins = Number(els.chatMuteSelect?.value || 15) || 15;
+        setChatMute(mins);
+      }
+    });
+  }
+  if (els.chatPopupOpen) {
+    els.chatPopupOpen.addEventListener("click", openChatPopup);
+  }
+  if (els.chatPopupToggle) {
+    els.chatPopupToggle.addEventListener("click", toggleChatPopup);
+  }
+  if (els.chatPopupClose) {
+    els.chatPopupClose.addEventListener("click", closeChatPopup);
+  }
+  if (els.chatPopupOverlay) {
+    els.chatPopupOverlay.addEventListener("click", (e) => {
+      if (e.target === els.chatPopupOverlay) closeChatPopup();
+    });
+  }
+  if (els.chatPopupSendBtn) {
+    els.chatPopupSendBtn.addEventListener("click", sendChatMessageFromPopup);
+  }
+  if (els.chatPopupInput) {
+    els.chatPopupInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") sendChatMessageFromPopup();
+    });
+    els.chatPopupInput.addEventListener("focus", () => clearChatUnread());
   }
   if (els.lbPrivacyBtn) {
     els.lbPrivacyBtn.addEventListener("click", () => {
@@ -13051,6 +13460,8 @@ function init() {
   initMarket();
   initSocket();
   loadLocal();
+  loadChatPrefs();
+  updateChatBadge();
   applyPerfChartPoints();
   setCompactMode(state.compactMode);
   loadTodayAssist();
@@ -13085,6 +13496,11 @@ function init() {
   updateReplayUI();
   buildAdminCoinSelect();
   bindEvents();
+  relocateChatPopupButton();
+  if (els.chatFilter) els.chatFilter.value = state.chatFilter || "all";
+  updateChatMuteUI();
+  updateChatBadge();
+  updateChatOnlineUI();
   initAcademyVisibilityObservers();
   setupCollapsiblePanels();
   renderAchievements();

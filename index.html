@@ -162,6 +162,7 @@
   <main class="main-grid">
     <section class="panel market" id="panelMarket">
       <div class="panel-head">
+        <button id="chatPopupOpen" class="mini" type="button">Mở popup</button>
         <div>
           <div class="panel-title">Thị trường</div>
           <div class="panel-sub">Tất cả cặp coin (mô phỏng)</div>
@@ -517,6 +518,29 @@
           <div class="panel-sub">Phòng chat chung</div>
         </div>
       </div>
+      <div class="chat-tools">
+        <div class="chat-online">
+          <span>Online:</span>
+          <span id="chatOnlineCount">0</span>
+          <div class="chat-online-list" id="chatOnlineList"></div>
+        </div>
+        <div class="chat-tool-actions">
+          <select id="chatFilter" aria-label="Loc chat">
+            <option value="all">Tat ca</option>
+            <option value="user">Nguoi choi</option>
+            <option value="bot">Bot</option>
+            <option value="system">He thong</option>
+            <option value="pinned">Ghim</option>
+          </select>
+          <select id="chatMuteSelect" aria-label="Mute chat">
+            <option value="15">Mute 15m</option>
+            <option value="30">Mute 30m</option>
+            <option value="60">Mute 60m</option>
+          </select>
+          <button id="chatMuteBtn" type="button">Mute</button>
+        </div>
+      </div>
+      <div class="chat-pinned" id="chatPinned"></div>
       <div class="chat-body" id="chatMessages"></div>
       <div class="chat-input">
         <input id="chatInput" placeholder="Nhập tin nhắn..." />
@@ -674,6 +698,25 @@
       </div>
     </div>
   </div>
+  <div class="chat-popup-overlay hidden" id="chatPopupOverlay" aria-hidden="true">
+    <div class="chat-popup-card">
+      <div class="chat-popup-head">
+        <div>
+          <div class="chat-popup-title">TrÃ² chuyá»‡n</div>
+          <div class="chat-popup-sub">PhÃ²ng chat chung</div>
+        </div>
+        <div class="chat-popup-actions">
+          <button id="chatPopupClose" type="button">Đóng</button>
+        </div>
+      </div>
+      <div class="chat-pinned" id="chatPopupPinned"></div>
+      <div class="chat-body" id="chatPopupMessages"></div>
+      <div class="chat-input">
+        <input id="chatPopupInput" placeholder="Nhập tin nhắn..." />
+        <button id="chatPopupSendBtn" type="button">Gửi</button>
+      </div>
+    </div>
+  </div>
   <div class="liquidation-overlay" id="liquidationOverlay">
     <div class="liquidation-text">BỊ THANH LÝ</div>
     <div class="liquidation-sub">Ký quỹ không đủ, vị thế bị thanh lý</div>
@@ -683,6 +726,7 @@
     <button id="quickSellBtn" type="button" aria-label="Ban nhanh">Bán nhanh</button>
     <button id="quickCancelBtn" type="button" aria-label="Hủy lệnh gần nhất">Hủy lệnh gần nhất</button>
   </div>
+  <button class="chat-float-btn" id="chatPopupToggle" type="button" aria-label="Mở chat">Chat <span id="chatBadge" class="chat-badge hidden">0</span></button>
   <div class="tip-overlay hidden" id="tipOverlay">
     <div class="tip-card">
       <div class="tip-head">
