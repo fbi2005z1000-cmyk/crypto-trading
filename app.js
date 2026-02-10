@@ -362,7 +362,21 @@ const BULL_BEAR_XP = 15;
 const UNDO_WINDOW_MS = 6000;
 let undoState = null;
 const SPIN_TRADE_REQUIRED = 10;
-const SPIN_SEGMENTS = 3;
+const SPIN_REWARD_META = [
+  { label: "+100 USD", weight: 30 },
+  { label: "+500 USD", weight: 20 },
+  { label: "+5,000 USD", weight: 6 },
+  { label: "+10,000 USD", weight: 4 },
+  { label: "+50,000 USD", weight: 1 },
+  { label: "+100,000,000 VND", weight: 4 },
+  { label: "+500,000,000 VND", weight: 1 },
+  { label: "BTC 0.01", weight: 2 },
+  { label: "ETH 0.2", weight: 3 },
+  { label: "BNB 1", weight: 3 },
+  { label: "SOL 5", weight: 4 },
+  { label: "X2 don bay (1h)", weight: 10 }
+];
+const SPIN_SEGMENTS = SPIN_REWARD_META.length;
 const SPIN_FULL_ROTATIONS = 4;
 let spinRotation = 0;
 let spinLock = false;
@@ -633,11 +647,72 @@ function spinToSegment(index) {
   els.spinWheel.style.transform = `rotate(${spinRotation}deg)`;
 }
 
+function renderSpinLabels() {
+  if (!els.spinWheel) return;
+  els.spinWheel.innerHTML = "";
+  const step = 360 / SPIN_SEGMENTS;
+  SPIN_REWARD_META.forEach((reward, idx) => {
+    const label = document.createElement("div");
+    label.className = "spin-label";
+    label.textContent = reward.label;
+    label.style.setProperty("--spin-angle", `${idx * step}deg`);
+    label.style.setProperty("--spin-angle-inv", `${-idx * step}deg`);
+    els.spinWheel.appendChild(label);
+  });
+}
+
+function renderSpinOdds() {
+  if (!els.spinCard) return;
+  const wheelWrap = els.spinCard.querySelector(".spin-wheel-wrap");
+  if (wheelWrap && (!wheelWrap.parentElement || !wheelWrap.parentElement.classList.contains("spin-wheel-row"))) {
+    const row = document.createElement("div");
+    row.className = "spin-wheel-row";
+    wheelWrap.parentNode.insertBefore(row, wheelWrap);
+    row.appendChild(wheelWrap);
+  }
+  const rowWrap = els.spinCard.querySelector(".spin-wheel-row");
+  let wrap = document.getElementById("spinOdds");
+  if (!wrap) {
+    wrap = document.createElement("div");
+    wrap.id = "spinOdds";
+    wrap.className = "spin-odds";
+    if (rowWrap) {
+      rowWrap.appendChild(wrap);
+    } else {
+      const anchor = els.spinNote || els.spinCard;
+      if (anchor && anchor.parentNode) {
+        anchor.parentNode.insertBefore(wrap, anchor.nextSibling);
+      } else {
+        els.spinCard.appendChild(wrap);
+      }
+    }
+  }
+  const total = SPIN_REWARD_META.reduce((sum, r) => sum + (r.weight || 0), 0) || 1;
+  wrap.innerHTML = SPIN_REWARD_META.map((r) => {
+    const pct = ((r.weight || 0) / total) * 100;
+    return `<div class="spin-odds-row"><span>${escapeHtml(r.label)}</span><span>${pct.toFixed(1)}%</span></div>`;
+  }).join("");
+}
+
 function formatSpinReward(reward) {
   if (!reward) return "Phần thưởng đã nhận.";
   if (reward.type === "usd") return `+${formatUSD(reward.amount || 0)}`;
   if (reward.type === "item") return reward?.item?.name || "Vật phẩm đặc biệt";
   return "Phần thưởng đã nhận.";
+}
+
+function formatSpinReward(reward) {
+  if (!reward) return "Phan thuong da nhan.";
+  if (reward.label) return reward.label;
+  if (reward.type === "usd") return `+${formatUSD(reward.amount || 0)}`;
+  if (reward.type === "vnd") return `+${formatVND(reward.amount || 0)}`;
+  if (reward.type === "coin") {
+    const sym = reward.symbol || "";
+    const qty = Number(reward.amount) || 0;
+    return `+${qty} ${sym}`;
+  }
+  if (reward.type === "item") return reward?.item?.name || "Vat pham dac biet";
+  return "Phan thuong da nhan.";
 }
 
 function renderPredictStatus(text, type = "") {
@@ -2399,6 +2474,189 @@ function renderAdminUsers(list = []) {
         </div>`;
     })
     .join("");
+  renderAdminLoginTable();
+  renderAdminWhaleList();
+}
+
+function ensureAdminSectionToggle(section) {
+  if (!section) return;
+  let titleEl = section.querySelector(".admin-section-title");
+  if (!titleEl) {
+    titleEl = document.createElement("div");
+    titleEl.className = "admin-section-title";
+    titleEl.textContent = "Admin";
+    section.insertBefore(titleEl, section.firstChild);
+  }
+  if (titleEl.querySelector(".admin-section-toggle")) return;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "admin-section-toggle";
+  const update = () => {
+    btn.textContent = section.classList.contains("collapsed") ? "+" : "-";
+  };
+  btn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    section.classList.toggle("collapsed");
+    update();
+  });
+  update();
+  titleEl.appendChild(btn);
+}
+
+function wrapAdminSection(node, title) {
+  if (!node || !node.parentNode) return null;
+  if (node.closest(".admin-section")) return node.closest(".admin-section");
+  const section = document.createElement("div");
+  section.className = "admin-section";
+  const titleEl = document.createElement("div");
+  titleEl.className = "admin-section-title";
+  titleEl.textContent = title || "Admin";
+  section.appendChild(titleEl);
+  node.parentNode.insertBefore(section, node);
+  section.appendChild(node);
+  ensureAdminSectionToggle(section);
+  return section;
+}
+
+function initAdminCollapsibles() {
+  if (!els.adminPanel) return;
+  const panel = els.adminPanel;
+  const directChildren = Array.from(panel.children);
+  const mainGrid = directChildren.find((el) => el.classList && el.classList.contains("admin-grid"));
+  if (mainGrid) wrapAdminSection(mainGrid, "Cap nhat so du");
+  const priceControls = document.getElementById("adminPriceControls");
+  if (priceControls) {
+    const section = wrapAdminSection(priceControls, "Dieu khien gia coin");
+    const preview = document.getElementById("adminPricePreview");
+    if (preview && section && preview.parentNode !== section) {
+      section.appendChild(preview);
+    }
+  }
+  const filters = panel.querySelector(":scope > .admin-filters");
+  if (filters) wrapAdminSection(filters, "Bo loc nguoi dung");
+  const settings = panel.querySelector(":scope > .admin-settings");
+  if (settings) wrapAdminSection(settings, "Cai dat dang ky / IP");
+  const advanced = panel.querySelector(":scope > .admin-advanced");
+  if (advanced) wrapAdminSection(advanced, "Nang cao & thong ke");
+  panel.querySelectorAll(".admin-section").forEach((section) => ensureAdminSectionToggle(section));
+}
+
+function ensureAdminLoginPanel() {
+  if (!els.adminPanel) return null;
+  let panel = document.getElementById("adminLoginPanel");
+  if (!panel) {
+    panel = document.createElement("div");
+    panel.id = "adminLoginPanel";
+    panel.className = "admin-section";
+    panel.innerHTML = `
+      <div class="admin-section-title">Thong tin dang nhap</div>
+      <div class="admin-login-table" id="adminLoginTable"></div>
+    `;
+    const anchor = document.getElementById("adminSearch");
+    if (anchor && anchor.parentNode) {
+      anchor.parentNode.insertBefore(panel, anchor);
+    } else {
+      els.adminPanel.appendChild(panel);
+    }
+  }
+  els.adminLoginTable = panel.querySelector("#adminLoginTable");
+  ensureAdminSectionToggle(panel);
+  return panel;
+}
+
+function renderAdminLoginTable() {
+  const panel = ensureAdminLoginPanel();
+  if (!panel) return;
+  const table = panel.querySelector("#adminLoginTable");
+  if (!table) return;
+  if (!Array.isArray(adminUsers) || adminUsers.length === 0) {
+    table.innerHTML = `<div class="admin-login-row">Chua co du lieu.</div>`;
+    return;
+  }
+  const rows = adminUsers.map((u) => {
+    const loginAt = u.lastLoginAt ? formatDateTime(u.lastLoginAt) : "-";
+    const loginIp = u.lastLoginIp || "-";
+    const coinCount = Number.isFinite(u.coinCount) ? u.coinCount : 0;
+    const coinList = Array.isArray(u.coinList)
+      ? u.coinList.map((c) => `${c.symbol} ${formatNumber(Number(c.qty) || 0)}`).join(", ")
+      : "";
+    const coinText = coinCount > 0 ? `${coinCount}: ${coinList}` : "-";
+    return `
+      <div class="admin-login-row">
+        <span>${escapeHtml(u.username || "-")}</span>
+        <span>${loginAt}</span>
+        <span>${escapeHtml(loginIp)}</span>
+        <span>${escapeHtml(coinText)}</span>
+      </div>
+    `;
+  });
+  table.innerHTML = [
+    `<div class="admin-login-head"><span>User</span><span>Login</span><span>IP</span><span>Coin</span></div>`,
+    ...rows
+  ].join("");
+}
+
+function ensureAdminWhalePanel() {
+  if (!els.adminPanel) return null;
+  let panel = document.getElementById("adminWhalePanel");
+  if (!panel) {
+    panel = document.createElement("div");
+    panel.id = "adminWhalePanel";
+    panel.className = "admin-section";
+    panel.innerHTML = `
+      <div class="admin-section-title">Top dai gia (admin)</div>
+      <div class="admin-list" id="adminWhaleList"></div>
+    `;
+    const anchor = document.getElementById("adminSearch");
+    if (anchor && anchor.parentNode) {
+      anchor.parentNode.insertBefore(panel, anchor);
+    } else {
+      els.adminPanel.appendChild(panel);
+    }
+  }
+  els.adminWhaleList = panel.querySelector("#adminWhaleList");
+  ensureAdminSectionToggle(panel);
+  return panel;
+}
+
+function renderAdminWhaleList() {
+  const panel = ensureAdminWhalePanel();
+  if (!panel || !els.adminWhaleList) return;
+  if (!Array.isArray(adminUsers) || adminUsers.length === 0) {
+    els.adminWhaleList.textContent = "Chua co du lieu.";
+    return;
+  }
+  const rows = adminUsers
+    .filter((u) => !u.deleted && !u.locked)
+    .map((u) => {
+      const usd = Number(u.usd) || 0;
+      const vnd = Number(u.vnd) || 0;
+      const equity = usd + vnd / FX_RATE;
+      return { ...u, equity };
+    })
+    .sort((a, b) => b.equity - a.equity)
+    .slice(0, 100);
+  if (!rows.length) {
+    els.adminWhaleList.textContent = "Chua co du lieu.";
+    return;
+  }
+  els.adminWhaleList.innerHTML = rows
+    .map((u, idx) => {
+      const lockLabel = u.locked ? "Mo khoa" : "Khoa";
+      const lockClass = u.locked ? "ok" : "warn";
+      return `
+        <div class="admin-row">
+          <div class="admin-top">
+            <div class="admin-name">#${idx + 1} ${escapeHtml(u.username || "-")}</div>
+            <div class="admin-actions">
+              <button class="${lockClass} admin-whale-lock" data-user="${escapeHtml(u.username || "")}" data-locked="${u.locked ? "1" : "0"}">${lockLabel}</button>
+            </div>
+          </div>
+          <div class="admin-balance">${formatUSD(u.equity || 0)} • ${formatVND(u.equity * FX_RATE)}</div>
+        </div>
+      `;
+    })
+    .join("");
 }
 
 function updateAdminUser(username, patch) {
@@ -3865,6 +4123,11 @@ function initSocket() {
   });
   socket.on("admin_approval_required", async (payload) => {
     if (!adminState.authed) return;
+    const approveToken = payload?.token;
+    if (!approveToken) return;
+    const action = payload?.action || "HANH_DONG";
+    sendAdminAction(action, { approveToken });
+    return;
     const action = payload?.action || "Hành động";
     const approveToken = payload?.token;
     if (!approveToken) return;
@@ -4563,8 +4826,14 @@ function setRichLeaderboardMode(mode) {
   renderRichLeaderboard();
 }
 
+function updateRichLeaderboardTitle() {
+  const title = document.querySelector(".leaderboard-title");
+  if (title) title.textContent = "BXH dai gia (Toan bo)";
+}
+
 function renderRichLeaderboard() {
   if (!els.richLeaderboard) return;
+  updateRichLeaderboardTitle();
   const list = state.richLeaderboardMode === "sandbox"
     ? state.richLeaderboardSandbox
     : state.richLeaderboardReal;
@@ -12253,6 +12522,19 @@ function bindEvents() {
       sendAdminAction("SET_INVITE_ONLY", { enabled: els.adminInviteOnly.checked });
     });
   }
+  if (els.adminWhaleList) {
+    els.adminWhaleList.addEventListener("click", (e) => {
+      if (!adminState.authed) return;
+      const btn = e.target.closest(".admin-whale-lock");
+      if (!btn) return;
+      const username = btn.dataset.user;
+      if (!username) return;
+      const locked = btn.dataset.locked === "1";
+      updateAdminUser(username, { locked: !locked });
+      sendAdminAction(locked ? "UNLOCK_USER" : "LOCK_USER", { target: username });
+      renderAdminWhaleList();
+    });
+  }
   if (els.adminInviteAdd) {
     els.adminInviteAdd.addEventListener("click", () => {
       if (!adminState.authed) return;
@@ -12332,13 +12614,13 @@ function bindEvents() {
       if (resetBtn) {
         const username = resetBtn.dataset.user;
         if (!username) return;
-        const confirmCode = await adminPrompt({
+        /* const confirmCode = await adminPrompt({
           title: "Ma xac nhan",
           text: "Nhập mã xác nhận (mã sếp):",
           type: "password"
         });
-        if (!confirmCode) return;
-        sendAdminAction("RESET_PASSWORD", { target: username, confirmCode });
+        if (!confirmCode) return; */
+        sendAdminAction("RESET_PASSWORD", { target: username });
         return;
       }
       const setBtn = e.target.closest(".admin-setpass");
@@ -12352,13 +12634,13 @@ function bindEvents() {
           showToast("Nhập mật khẩu mới.");
           return;
         }
-        const confirmCode = await adminPrompt({
+        /* const confirmCode = await adminPrompt({
           title: "Ma xac nhan",
           text: "Nhập mã xác nhận (mã sếp):",
           type: "password"
         });
-        if (!confirmCode) return;
-        sendAdminAction("RESET_PASSWORD", { target: username, password: newPass, confirmCode });
+        if (!confirmCode) return; */
+        sendAdminAction("RESET_PASSWORD", { target: username, password: newPass });
         if (input) input.value = "";
         return;
       }
@@ -13508,6 +13790,11 @@ function init() {
   initCandleGuide();
   updateReplayUI();
   buildAdminCoinSelect();
+  initAdminCollapsibles();
+  ensureAdminLoginPanel();
+  ensureAdminWhalePanel();
+  renderSpinLabels();
+  renderSpinOdds();
   bindEvents();
   relocateChatPopupButton();
   relocateChatToolsToPopup();
@@ -13863,19 +14150,20 @@ async function sendAdminAction(action, extra = {}) {
     adminState.pending = null;
     return;
   }
-  const otp = await adminPrompt({
+  /* const otp = await adminPrompt({
     title: "OTP admin",
     text: "Nhập OTP admin (nếu có):",
     type: "text",
     value: ""
   });
+  */
   const ownerCode = await adminPrompt({
     title: "Mã sếp (toàn quyền)",
     text: "Nhập mã sếp nếu cần toàn quyền:",
     type: "password",
     value: ""
   });
-  socket.emit("admin_auth", { password: pass, otp: otp || "", ownerCode: ownerCode || "" });
+  socket.emit("admin_auth", { password: pass, ownerCode: ownerCode || "" });
 }
 
 function triggerGodMode(action) {

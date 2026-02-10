@@ -1256,6 +1256,44 @@ function rollSpinReward() {
   return { index, reward: rewards[index] };
 }
 
+const SPIN_REWARDS = [
+  { type: "usd", amount: 100, label: "+100 USD", weight: 30 },
+  { type: "usd", amount: 500, label: "+500 USD", weight: 20 },
+  { type: "usd", amount: 5000, label: "+5,000 USD", weight: 6 },
+  { type: "usd", amount: 10000, label: "+10,000 USD", weight: 4 },
+  { type: "usd", amount: 50000, label: "+50,000 USD", weight: 1 },
+  { type: "vnd", amount: 100000000, label: "+100,000,000 VND", weight: 4 },
+  { type: "vnd", amount: 500000000, label: "+500,000,000 VND", weight: 1 },
+  { type: "coin", symbol: "BTC", amount: 0.01, label: "BTC 0.01", weight: 2 },
+  { type: "coin", symbol: "ETH", amount: 0.2, label: "ETH 0.2", weight: 3 },
+  { type: "coin", symbol: "BNB", amount: 1, label: "BNB 1", weight: 3 },
+  { type: "coin", symbol: "SOL", amount: 5, label: "SOL 5", weight: 4 },
+  {
+    type: "item",
+    item: {
+      name: "X2 don bay",
+      desc: "Tang gap doi don bay trong 1 gio.",
+      type: "buff",
+      effect: "x2_leverage",
+      durationMs: 60 * 60 * 1000
+    },
+    label: "X2 don bay (1h)",
+    weight: 10
+  }
+];
+
+function rollSpinReward() {
+  const total = SPIN_REWARDS.reduce((sum, r) => sum + (Number(r.weight) || 1), 0);
+  let roll = Math.random() * total;
+  for (let i = 0; i < SPIN_REWARDS.length; i += 1) {
+    roll -= Number(SPIN_REWARDS[i].weight) || 1;
+    if (roll <= 0) {
+      return { index: i, reward: SPIN_REWARDS[i] };
+    }
+  }
+  return { index: 0, reward: SPIN_REWARDS[0] };
+}
+
 function userToRow(user) {
   return [
     user.username,
@@ -2122,11 +2160,11 @@ function calcRiskScore(user) {
   return { score, label };
 }
 
-function buildRichLeaderboard(limit = LEADERBOARD_LIMIT) {
+function buildRichLeaderboard(limit) {
   const rowsReal = [];
   const rowsSandbox = [];
   Object.values(users).forEach((user) => {
-    if (!user || user.deleted) return;
+    if (!user || user.deleted || user.locked) return;
     const equityUsd = calcUserEquityUsd(user);
     const risk = calcRiskScore(user);
     const list = user.sandboxed ? rowsSandbox : rowsReal;
@@ -2138,19 +2176,19 @@ function buildRichLeaderboard(limit = LEADERBOARD_LIMIT) {
       riskLabel: risk.label
     });
   });
-  const normalize = (list) =>
-    list
-      .sort((a, b) => b.equityUsd - a.equityUsd)
-      .slice(0, limit)
-      .map((row, idx) => ({
-        rank: idx + 1,
-        name: row.privacy === "anon" ? maskUsername(row.username) : row.username,
-        equityUsd: row.equityUsd,
-        equityVnd: row.equityUsd * FX_RATE,
-        privacy: row.privacy,
-        riskScore: row.riskScore,
-        riskLabel: row.riskLabel
-      }));
+  const normalize = (list) => {
+    const sorted = list.sort((a, b) => b.equityUsd - a.equityUsd);
+    const cap = Number.isFinite(limit) ? limit : sorted.length;
+    return sorted.slice(0, cap).map((row, idx) => ({
+      rank: idx + 1,
+      name: row.privacy === "anon" ? maskUsername(row.username) : row.username,
+      equityUsd: row.equityUsd,
+      equityVnd: row.equityUsd * FX_RATE,
+      privacy: row.privacy,
+      riskScore: row.riskScore,
+      riskLabel: row.riskLabel
+    }));
+  };
   return {
     real: normalize(rowsReal),
     sandbox: normalize(rowsSandbox)
@@ -2269,6 +2307,95 @@ function maybeBotReply(user, text) {
       ts: Date.now()
     });
   }, 700 + Math.random() * 900);
+}
+
+const BOT_NAME_POOL = [
+  "Minh", "Tuan", "Huy", "Long", "Quang", "Khanh", "Trang", "Linh", "Mai", "Nhi",
+  "Hoang", "Nam", "Phuc", "An", "Vy", "Chi", "Dung", "Kiet", "Bao", "Son"
+];
+const BOT_TAGS = ["pro", "vip", "trade", "alpha", "beta", "hodl", "scalp"];
+const BOT_COINS = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "AVAX", "TON"];
+const BOT_TRENDS = ["sideway", "hoi phuc", "giam nhe", "bat len", "bi ep xuong", "dao chieu"];
+const BOT_ADVICE = [
+  "Nho dat SL truoc khi vao lenh.",
+  "Chia von nho, dung all-in.",
+  "Neu thua lien tuc hay nghi 10-15 phut.",
+  "Dung don bay vua phai (x10-x20).",
+  "Theo ke hoach, khong FOMO."
+];
+const BOT_GREET = [
+  "Chao ban, can ho tro gi?",
+  "Hello, co lenh nao can xem khong?",
+  "Hi, vao lenh nho quan ly rui ro nhe."
+];
+
+function pickBotName() {
+  const base = BOT_NAME_POOL[Math.floor(Math.random() * BOT_NAME_POOL.length)];
+  const tag = Math.random() < 0.35 ? "" : `_${BOT_TAGS[Math.floor(Math.random() * BOT_TAGS.length)]}`;
+  const num = Math.random() < 0.5 ? "" : `${Math.floor(Math.random() * 90 + 10)}`;
+  return `${base}${tag}${num}`;
+}
+
+function buildBotFreeTalk() {
+  const coin = BOT_COINS[Math.floor(Math.random() * BOT_COINS.length)];
+  const trend = BOT_TRENDS[Math.floor(Math.random() * BOT_TRENDS.length)];
+  const advice = BOT_ADVICE[Math.floor(Math.random() * BOT_ADVICE.length)];
+  const heads = [
+    `Theo minh ${coin} dang ${trend}.`,
+    `${coin} hom nay co ve ${trend}.`,
+    `Nhin ${coin} thay xu huong ${trend}.`
+  ];
+  const head = heads[Math.floor(Math.random() * heads.length)];
+  return `${head} ${advice}`;
+}
+
+function pickBotReply(text) {
+  const t = String(text || "").toLowerCase();
+  if (t.includes("xin chao") || t.includes("hello") || t === "hi") {
+    return BOT_GREET[Math.floor(Math.random() * BOT_GREET.length)];
+  }
+  if (t.includes("mua") || t.includes("long")) {
+    return "Long neu co xu huong ro. Thu vao nho va dat SL truoc.";
+  }
+  if (t.includes("ban") || t.includes("short")) {
+    return "Short chi nen khi co tin hieu giam ro. Can than don bay.";
+  }
+  if (t.includes("sl") || t.includes("stop")) {
+    return "SL giup bao ve tai khoan. Thu SL 1-2% neu moi.";
+  }
+  if (t.includes("tp") || t.includes("chot loi")) {
+    return "TP nen nho va deu. 2-3% la on voi nguoi moi.";
+  }
+  if (t.includes("don bay") || t.includes("leverage")) {
+    return "Don bay cao de chay tai khoan nhanh. Nen x10-x20.";
+  }
+  if (t.includes("fomo")) {
+    return "FOMO la ke thu. Neu tre tau thi bo qua, co co hoi khac.";
+  }
+  if (t.includes("bot")) {
+    return "Bot day. Minh tra loi theo nguyen tac quan ly rui ro nhe.";
+  }
+  return buildBotFreeTalk();
+}
+
+function maybeBotReply(user, text) {
+  const username = user?.username || "";
+  const now = Date.now();
+  const cooldownUntil = chatBotCooldown.get(username) || 0;
+  if (now < cooldownUntil) return;
+  if (Math.random() > 0.65) return;
+  const reply = pickBotReply(text);
+  chatBotCooldown.set(username, now + 7000);
+  const botName = pickBotName();
+  setTimeout(() => {
+    pushChatMessage({
+      id: Date.now() + Math.random(),
+      user: botName,
+      bot: true,
+      text: reply,
+      ts: Date.now()
+    });
+  }, 500 + Math.random() * 800);
 }
 
 function emitTradeWinNews(user, symbol, pnlUsd, pct) {
@@ -3936,15 +4063,8 @@ io.on("connection", (socket) => {
       return;
     }
     const pass = String(payload?.password || "");
-    const otp = String(payload?.otp || "");
     const ownerCode = String(payload?.ownerCode || "");
     if (pass === ADMIN_PASSWORD) {
-      if (ADMIN_OTP_SECRET && !verifyOtp(otp, ADMIN_OTP_SECRET)) {
-        const reason = "OTP khong hop le.";
-        logAdminAction(socket, user, "ADMIN_AUTH", payload, false, reason);
-        socket.emit("admin_status", { ok: false, reason });
-        return;
-      }
       socket.data.adminLastAt = Date.now();
       socket.data.adminSessionExp = Date.now() + (Number(settings.adminSessionMs) || DEFAULT_ADMIN_SESSION_MS);
       socket.data.ownerMode = ownerCode && ownerCode === ADMIN_OWNER_CODE;
@@ -4065,24 +4185,7 @@ io.on("connection", (socket) => {
       "SET_LOG_RETENTION",
       "RUN_LOG_CLEANUP"
     ]);
-    const approvalRequired = new Set([
-      "RESET_PASSWORD",
-      "DELETE_USER",
-      "SET_PRICE",
-      "ADJUST_PRICE",
-      "CRASH",
-      "PUMP_BTC",
-      "FREEZE",
-      "CALM",
-      "VOL",
-      "SET_CANDLE_BIAS",
-      "CANCEL_ORDER_ADMIN",
-      "RESET_OPEN_ORDERS",
-      "RESET_POSITIONS",
-      "SET_MARKET_FREEZE",
-      "SET_COIN_LOCK",
-      "RESTORE_DB"
-    ]);
+    const approvalRequired = new Set();
     const modAllowed = new Set([
       "SET_BALANCE",
       "LOCK_USER",
@@ -5412,30 +5515,40 @@ io.on("connection", (socket) => {
       return;
     }
     if (action === "CHECK_USERS") {
-      const list = Object.keys(users).map((name) => ({
-        username: name,
-        userId: users[name]?.userId || "",
-        email: users[name]?.email || "",
-        usd: users[name]?.usd ?? 0,
-        vnd: users[name]?.vnd ?? 0,
-        locked: !!users[name]?.locked,
-        isAdmin: !!users[name]?.isAdmin,
-        role: users[name]?.adminRole || "",
-        deleted: !!users[name]?.deleted,
-        createdAt: users[name]?.createdAt || 0,
-        lastLoginAt: users[name]?.lastLoginAt || 0,
-        lastLoginIp: users[name]?.lastLoginIp || "",
-        lastLoginFailAt: users[name]?.lastLoginFailAt || 0,
-        lastLoginFailIp: users[name]?.lastLoginFailIp || "",
-        lastLoginFailCount: users[name]?.lastLoginFailCount || 0,
-        group: users[name]?.group || "",
-        riskTags: users[name]?.riskTags || [],
-        notes: users[name]?.notes || "",
-        limits: users[name]?.limits || {},
-        strikes: users[name]?.strikes || 0,
-        watchlist: !!users[name]?.watchlist,
-        online: !!sockets[name]
-      }));
+      const list = Object.keys(users).map((name) => {
+        const holdings = users[name]?.holdings || {};
+        const coinRows = Object.entries(holdings)
+          .filter(([, qty]) => Number(qty) > 0)
+          .map(([symbol, qty]) => ({ symbol, qty: Number(qty) || 0 }));
+        const coinCount = coinRows.length;
+        const coinList = coinRows.slice(0, 6);
+        return {
+          username: name,
+          userId: users[name]?.userId || "",
+          email: users[name]?.email || "",
+          usd: users[name]?.usd ?? 0,
+          vnd: users[name]?.vnd ?? 0,
+          locked: !!users[name]?.locked,
+          isAdmin: !!users[name]?.isAdmin,
+          role: users[name]?.adminRole || "",
+          deleted: !!users[name]?.deleted,
+          createdAt: users[name]?.createdAt || 0,
+          lastLoginAt: users[name]?.lastLoginAt || 0,
+          lastLoginIp: users[name]?.lastLoginIp || "",
+          lastLoginFailAt: users[name]?.lastLoginFailAt || 0,
+          lastLoginFailIp: users[name]?.lastLoginFailIp || "",
+          lastLoginFailCount: users[name]?.lastLoginFailCount || 0,
+          group: users[name]?.group || "",
+          riskTags: users[name]?.riskTags || [],
+          notes: users[name]?.notes || "",
+          limits: users[name]?.limits || {},
+          strikes: users[name]?.strikes || 0,
+          watchlist: !!users[name]?.watchlist,
+          online: !!sockets[name],
+          coinCount,
+          coinList
+        };
+      });
       logAdminAction(socket, user, action, payload, true);
       socket.emit("admin_users", { users: list });
       return;
@@ -5459,11 +5572,6 @@ io.on("connection", (socket) => {
         }
         if (targetUser.deleted) {
           deny("Tai khoan da bi xoa.");
-          return;
-        }
-        const confirmCode = String(payload?.confirmCode || "");
-        if (!confirmCode || confirmCode !== ADMIN_OWNER_CODE) {
-          deny("Sai ma xac nhan.");
           return;
         }
         const nextPass = String(payload?.password || "").trim();
@@ -5984,6 +6092,18 @@ io.on("connection", (socket) => {
       if (reward.type === "usd") {
         addBalance(user, "USD", reward.amount);
         granted = { type: "usd", amount: reward.amount, label: reward.label };
+      } else if (reward.type === "vnd") {
+        addBalance(user, "VND", reward.amount);
+        granted = { type: "vnd", amount: reward.amount, label: reward.label };
+      } else if (reward.type === "coin" && reward.symbol) {
+        const symbol = String(reward.symbol || "").toUpperCase();
+        const qty = Number(reward.amount) || 0;
+        if (symbol && qty > 0) {
+          user.holdings = user.holdings || {};
+          user.holdings[symbol] = (user.holdings[symbol] || 0) + qty;
+          if (!user.holdingStart[symbol]) user.holdingStart[symbol] = Date.now();
+        }
+        granted = { type: "coin", symbol, amount: qty, label: reward.label };
       } else if (reward.type === "item" && reward.item) {
         const item = addInventoryItem(user, reward.item);
         granted = { type: "item", item, label: reward.label };
